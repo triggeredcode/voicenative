@@ -51,6 +51,9 @@ final class AppState {
     @ObservationIgnored
     @AppStorage("customDictionaryTerms") private var customDictionaryTerms = ""
     
+    @ObservationIgnored
+    @AppStorage("soundFeedback") private var soundFeedbackEnabled = true
+    
     private var modelContext: ModelContext?
     
     var menuBarIcon: String {
@@ -165,6 +168,9 @@ final class AppState {
             try audio.start()
             phase = .listening
             hud.show(state: .listening)
+            if soundFeedbackEnabled {
+                SoundFeedback.playStartRecording()
+            }
         } catch {
             setError("Failed to start recording: \(error.localizedDescription)")
         }
@@ -178,6 +184,10 @@ final class AppState {
         
         phase = .processing
         hud.show(state: .processing)
+        
+        if soundFeedbackEnabled {
+            SoundFeedback.playStopRecording()
+        }
         
         Task {
             await performTranscription(audioBuffer: audioBuffer, audioDuration: audioDuration)
@@ -204,9 +214,16 @@ final class AppState {
             
             phase = .ready
             hud.show(state: .copied)
+            
+            if soundFeedbackEnabled {
+                SoundFeedback.playCopied()
+            }
         } catch {
             setError("Transcription failed: \(error.localizedDescription)")
             hud.hide()
+            if soundFeedbackEnabled {
+                SoundFeedback.playError()
+            }
         }
     }
     

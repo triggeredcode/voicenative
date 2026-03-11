@@ -31,8 +31,9 @@ struct SettingsView: View {
 
 struct GeneralSettingsTab: View {
     @AppStorage("triggerMode") private var triggerMode = TriggerMode.toggle
-    @AppStorage("launchAtLogin") private var launchAtLogin = false
     @AppStorage("soundFeedback") private var soundFeedback = true
+    
+    @State private var launchManager = LaunchAtLoginManager()
     
     var body: some View {
         Form {
@@ -51,7 +52,7 @@ struct GeneralSettingsTab: View {
             }
             
             Section {
-                Toggle("Launch at Login", isOn: $launchAtLogin)
+                Toggle("Launch at Login", isOn: $launchManager.isEnabled)
                 Toggle("Sound Feedback", isOn: $soundFeedback)
             }
         }

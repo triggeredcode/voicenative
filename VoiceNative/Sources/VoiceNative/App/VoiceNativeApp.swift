@@ -4,6 +4,7 @@ import SwiftData
 @main
 struct VoiceNativeApp: App {
     @State private var appState = AppState()
+    @State private var showOnboarding = false
     
     private let modelContainer: ModelContainer
     
@@ -22,6 +23,12 @@ struct VoiceNativeApp: App {
                 .modelContainer(modelContainer)
                 .task {
                     appState.setModelContext(modelContainer.mainContext)
+                    
+                    appState.permissions.checkAllPermissions()
+                    if !appState.permissions.allPermissionsGranted {
+                        showOnboarding = true
+                    }
+                    
                     await appState.initialize()
                 }
         } label: {
@@ -42,5 +49,11 @@ struct VoiceNativeApp: App {
             HistoryView()
                 .modelContainer(modelContainer)
         }
+        
+        Window("Setup", id: "onboarding") {
+            OnboardingView()
+                .environment(appState)
+        }
+        .windowResizability(.contentSize)
     }
 }
