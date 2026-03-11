@@ -41,10 +41,12 @@ final class TranscriptionService: @unchecked Sendable {
 
         print("[Transcription] Loading model: \(model.rawValue) (cached: \(cached))")
 
+        // Use cpuAndGPU for encoder/decoder to avoid 60–90s ANE recompilation at load time.
+        // cpuAndNeuralEngine triggers heavy CoreML specialization that regressed load from ~5s to ~89s.
         let compute = ModelComputeOptions(
             melCompute: .cpuAndGPU,
-            audioEncoderCompute: .cpuAndNeuralEngine,
-            textDecoderCompute: .cpuAndNeuralEngine,
+            audioEncoderCompute: .cpuAndGPU,
+            textDecoderCompute: .cpuAndGPU,
             prefillCompute: .cpuOnly
         )
 
