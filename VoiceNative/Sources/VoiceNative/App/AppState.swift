@@ -62,6 +62,7 @@ final class AppState {
     private var keepaliveTimer: Task<Void, Never>?
     private var audioDeviceObserver: NSObjectProtocol?
     private var wakeObserver: NSObjectProtocol?
+    private var settingsWindowController: NSWindowController?
 
     // Streaming pipeline state
     private var pipelineChunks: [(text: String, endRawIndex: Int)] = []
@@ -103,6 +104,28 @@ final class AppState {
     }
 
     var isRecordingAvailable: Bool { phase == .ready }
+
+    // MARK: - Settings Window (manual NSWindow -- openWindow broken in MenuBarExtra)
+
+    func showSettings() {
+        if let window = settingsWindowController?.window, window.isVisible {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let view = SettingsView().environment(self)
+        let hosting = NSHostingController(rootView: view)
+        let window = NSWindow(contentViewController: hosting)
+        window.title = "VoiceNative Settings"
+        window.styleMask = [.titled, .closable]
+        window.setContentSize(NSSize(width: 500, height: 380))
+        window.center()
+
+        settingsWindowController = NSWindowController(window: window)
+        settingsWindowController?.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
 
     // MARK: - Lifecycle
 

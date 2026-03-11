@@ -35,11 +35,6 @@ struct VoiceNativeApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        Window("Settings", id: "settings") {
-            SettingsView()
-                .environment(appState)
-        }
-
         Window("History", id: "history") {
             HistoryView()
                 .modelContainer(modelContainer)

@@ -41,10 +41,9 @@ final class TranscriptionService: @unchecked Sendable {
 
         print("[Transcription] Loading model: \(model.rawValue) (cached: \(cached))")
 
-        // GPU for encoder allows pipeline parallelism with ANE decoder across chunks
         let compute = ModelComputeOptions(
             melCompute: .cpuAndGPU,
-            audioEncoderCompute: .cpuAndGPU,
+            audioEncoderCompute: .cpuAndNeuralEngine,
             textDecoderCompute: .cpuAndNeuralEngine,
             prefillCompute: .cpuOnly
         )
@@ -179,13 +178,19 @@ final class TranscriptionService: @unchecked Sendable {
         let rtf = elapsed / audioDuration
         print("[Transcription] Done in \(String(format: "%.2f", elapsed))s (\(results.count) segments, RTF=\(String(format: "%.3f", rtf)))")
 
+        for (i, seg) in results.enumerated() {
+            let txt = seg.text.prefix(80)
+            print("[Transcription]   segment[\(i)]: \"\(txt)\" (\(seg.segments.count) sub-segments)")
+        }
+
         let rawText = results
             .compactMap { $0.text }
             .joined(separator: " ")
             .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
 
         let filteredText = filterHallucinations(rawText)
-        print("[Transcription] Result (\(filteredText.count) chars): \"\(filteredText.prefix(200))\"")
+        print("[Transcription] Raw: \"\(rawText.prefix(120))\"")
+        print("[Transcription] Final (\(filteredText.count) chars): \"\(filteredText.prefix(200))\"")
 
         return filteredText
     }
