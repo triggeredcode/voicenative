@@ -4,137 +4,186 @@ import Observation
 @Observable
 final class AudioCaptureService: @unchecked Sendable {
     private let engine = AVAudioEngine()
-    private var audioBuffer: [Float] = []
+    private var rawBuffer: [Float] = []
     private let bufferLock = NSLock()
     private(set) var isRecording = false
     private(set) var audioDuration: TimeInterval = 0
-    
+
     private var recordingStartTime: Date?
-    private var converter: AVAudioConverter?
-    private var targetFormat: AVAudioFormat?
-    
+    private var nativeSampleRate: Double = 48000
+
     var onAudioChunk: (@Sendable ([Float]) -> Void)?
-    
+
     func start() throws {
-        guard !isRecording else {
-            print("[AudioCapture] Already recording, ignoring start()")
-            return
-        }
-        
+        guard !isRecording else { return }
+
         bufferLock.lock()
-        audioBuffer.removeAll()
-        audioBuffer.reserveCapacity(16000 * 60 * 2) // Pre-allocate for 2 minutes
+        rawBuffer.removeAll(keepingCapacity: true)
+        rawBuffer.reserveCapacity(Int(48000) * 300) // 5 minutes at 48kHz
         bufferLock.unlock()
-        
+
         recordingStartTime = Date()
-        
+        audioDuration = 0
+
         let inputNode = engine.inputNode
         let nativeFormat = inputNode.outputFormat(forBus: 0)
-        
-        print("[AudioCapture] Native format: \(nativeFormat.sampleRate)Hz, \(nativeFormat.channelCount) channels")
-        
-        targetFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: Constants.Audio.sampleRate,
-            channels: AVAudioChannelCount(Constants.Audio.channels),
-            interleaved: true
-        )!
-        
-        guard let targetFormat else {
-            throw AudioCaptureError.converterCreationFailed
-        }
-        
-        converter = AVAudioConverter(from: nativeFormat, to: targetFormat)
-        guard converter != nil else {
-            print("[AudioCapture] ERROR: Failed to create converter")
-            throw AudioCaptureError.converterCreationFailed
-        }
-        
-        print("[AudioCapture] Target format: \(targetFormat.sampleRate)Hz, \(targetFormat.channelCount) channels")
-        
-        let ratio = Constants.Audio.sampleRate / nativeFormat.sampleRate
-        let outputFrameCapacity = AVAudioFrameCount(Double(Constants.Audio.bufferSize) * ratio)
-        
-        inputNode.installTap(onBus: 0, bufferSize: Constants.Audio.bufferSize, format: nativeFormat) { [weak self] buffer, _ in
-            guard let self, let converter = self.converter, let targetFormat = self.targetFormat else { return }
-            
-            guard let convertedBuffer = AVAudioPCMBuffer(
-                pcmFormat: targetFormat,
-                frameCapacity: outputFrameCapacity
-            ) else { return }
-            
-            var error: NSError?
-            converter.convert(to: convertedBuffer, error: &error) { _, outStatus in
-                outStatus.pointee = .haveData
-                return buffer
-            }
-            
-            if let error {
-                print("[AudioCapture] Conversion error: \(error)")
-                return
-            }
-            
-            if let channelData = convertedBuffer.floatChannelData?[0] {
-                let frameLength = Int(convertedBuffer.frameLength)
-                let samples = Array(UnsafeBufferPointer(start: channelData, count: frameLength))
-                
-                self.bufferLock.lock()
-                self.audioBuffer.append(contentsOf: samples)
-                let currentCount = self.audioBuffer.count
-                self.bufferLock.unlock()
-                
-                // Log every ~5 seconds
-                if currentCount % (16000 * 5) < frameLength {
-                    let seconds = Double(currentCount) / 16000.0
-                    print("[AudioCapture] Recording: \(String(format: "%.1f", seconds))s (\(currentCount) samples)")
+        nativeSampleRate = nativeFormat.sampleRate
+
+        print("[AudioCapture] Native format: \(nativeFormat.sampleRate)Hz, \(nativeFormat.channelCount)ch")
+
+        inputNode.installTap(onBus: 0, bufferSize: 4096, format: nativeFormat) { [weak self] buffer, _ in
+            guard let self else { return }
+            guard let channelData = buffer.floatChannelData?[0] else { return }
+
+            let frameCount = Int(buffer.frameLength)
+            let samples: [Float]
+
+            if nativeFormat.channelCount > 1 {
+                // Downmix to mono by averaging channels
+                var mono = [Float](repeating: 0, count: frameCount)
+                let channelCount = Int(nativeFormat.channelCount)
+                for ch in 0..<channelCount {
+                    let chData = buffer.floatChannelData![ch]
+                    for i in 0..<frameCount {
+                        mono[i] += chData[i]
+                    }
                 }
-                
-                self.onAudioChunk?(samples)
+                let scale = 1.0 / Float(channelCount)
+                for i in 0..<frameCount { mono[i] *= scale }
+                samples = mono
+            } else {
+                samples = Array(UnsafeBufferPointer(start: channelData, count: frameCount))
             }
+
+            self.bufferLock.lock()
+            self.rawBuffer.append(contentsOf: samples)
+            let currentCount = self.rawBuffer.count
+            self.bufferLock.unlock()
+
+            if currentCount % (Int(self.nativeSampleRate) * 5) < frameCount {
+                let seconds = Double(currentCount) / self.nativeSampleRate
+                print("[AudioCapture] Recording: \(String(format: "%.1f", seconds))s (\(currentCount) samples @ \(Int(self.nativeSampleRate))Hz)")
+            }
+
+            self.onAudioChunk?(samples)
         }
-        
+
         try engine.start()
         isRecording = true
         print("[AudioCapture] Started recording")
     }
-    
+
+    /// Stop recording and return 16kHz mono Float32 samples ready for WhisperKit.
     func stop() -> [Float] {
-        guard isRecording else {
-            print("[AudioCapture] Not recording, ignoring stop()")
-            return []
-        }
-        
+        guard isRecording else { return [] }
+
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
+        engine.reset()
         isRecording = false
-        converter = nil
-        
+
         if let startTime = recordingStartTime {
             audioDuration = Date().timeIntervalSince(startTime)
         }
         recordingStartTime = nil
-        
+
         bufferLock.lock()
-        let result = audioBuffer
+        let rawSamples = rawBuffer
+        rawBuffer.removeAll(keepingCapacity: false)
         bufferLock.unlock()
-        
-        print("[AudioCapture] Stopped recording: \(result.count) samples (~\(String(format: "%.1f", audioDuration))s)")
-        
-        return result
+
+        let rawDuration = Double(rawSamples.count) / nativeSampleRate
+        print("[AudioCapture] Stopped: \(rawSamples.count) raw samples (~\(String(format: "%.1f", rawDuration))s @ \(Int(nativeSampleRate))Hz)")
+
+        if nativeSampleRate == Constants.Audio.targetSampleRate {
+            return rawSamples
+        }
+
+        let converted = convertToTargetRate(rawSamples)
+        let convertedDuration = Double(converted.count) / Constants.Audio.targetSampleRate
+        print("[AudioCapture] Converted: \(converted.count) samples (~\(String(format: "%.1f", convertedDuration))s @ 16kHz)")
+        return converted
     }
-    
+
     func reset() {
         bufferLock.lock()
-        audioBuffer.removeAll()
+        rawBuffer.removeAll(keepingCapacity: false)
         bufferLock.unlock()
         audioDuration = 0
+    }
+
+    /// Returns the current recording duration based on buffer size at native rate.
+    var currentRecordingDuration: TimeInterval {
+        if isRecording, let start = recordingStartTime {
+            return Date().timeIntervalSince(start)
+        }
+        return 0
+    }
+
+    // MARK: - Resampling
+
+    /// Non-real-time conversion of the full buffer from native rate to 16kHz mono.
+    private func convertToTargetRate(_ input: [Float]) -> [Float] {
+        guard !input.isEmpty else { return [] }
+
+        let srcFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: nativeSampleRate,
+            channels: 1,
+            interleaved: true
+        )!
+
+        let dstFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: Constants.Audio.targetSampleRate,
+            channels: 1,
+            interleaved: true
+        )!
+
+        guard let converter = AVAudioConverter(from: srcFormat, to: dstFormat) else {
+            print("[AudioCapture] ERROR: Could not create converter, returning raw samples")
+            return input
+        }
+
+        let inputFrameCount = AVAudioFrameCount(input.count)
+        guard let inputBuffer = AVAudioPCMBuffer(pcmFormat: srcFormat, frameCapacity: inputFrameCount) else {
+            return input
+        }
+        inputBuffer.frameLength = inputFrameCount
+        memcpy(inputBuffer.floatChannelData![0], input, input.count * MemoryLayout<Float>.size)
+
+        let ratio = Constants.Audio.targetSampleRate / nativeSampleRate
+        let outputFrameCount = AVAudioFrameCount(ceil(Double(input.count) * ratio)) + 1024
+        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: dstFormat, frameCapacity: outputFrameCount) else {
+            return input
+        }
+
+        var inputConsumed = false
+        var convError: NSError?
+        converter.convert(to: outputBuffer, error: &convError) { _, outStatus in
+            if inputConsumed {
+                outStatus.pointee = .endOfStream
+                return nil
+            }
+            inputConsumed = true
+            outStatus.pointee = .haveData
+            return inputBuffer
+        }
+
+        if let convError {
+            print("[AudioCapture] Conversion error: \(convError)")
+            return input
+        }
+
+        guard let outData = outputBuffer.floatChannelData?[0] else { return input }
+        return Array(UnsafeBufferPointer(start: outData, count: Int(outputBuffer.frameLength)))
     }
 }
 
 enum AudioCaptureError: LocalizedError {
     case converterCreationFailed
     case engineStartFailed
-    
+
     var errorDescription: String? {
         switch self {
         case .converterCreationFailed:
