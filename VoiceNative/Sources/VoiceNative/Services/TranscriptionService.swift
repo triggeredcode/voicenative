@@ -15,14 +15,16 @@ final class TranscriptionService: @unchecked Sendable {
     // MARK: - Model Loading
 
     func loadModel(_ model: WhisperModel) async throws {
+        let cached = isModelCached(model)
+
         await MainActor.run {
             isModelLoaded = false
             loadProgress = 0
-            loadStatus = "Downloading and loading model..."
+            loadStatus = cached ? "Loading model from cache..." : "Downloading model (~\(model.sizeEstimate))..."
             currentModel = model.rawValue
         }
 
-        print("[Transcription] Loading model: \(model.rawValue)")
+        print("[Transcription] Loading model: \(model.rawValue) (cached: \(cached))")
 
         let config = WhisperKitConfig(
             model: model.rawValue,
@@ -135,6 +137,28 @@ final class TranscriptionService: @unchecked Sendable {
         print("[Transcription] Final (\(filteredText.count) chars): \"\(filteredText.prefix(100))\"")
 
         return filteredText
+    }
+
+    /// Check if model files exist in WhisperKit's HuggingFace cache.
+    /// Cache path: ~/.cache/huggingface/hub/models--argmaxinc--whisperkit-coreml/
+    private func isModelCached(_ model: WhisperModel) -> Bool {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let cacheBase = home
+            .appendingPathComponent(".cache/huggingface/hub/models--argmaxinc--whisperkit-coreml")
+            .appendingPathComponent("snapshots")
+
+        guard let snapshots = try? FileManager.default.contentsOfDirectory(
+            at: cacheBase,
+            includingPropertiesForKeys: nil
+        ) else { return false }
+
+        for snapshot in snapshots {
+            let modelDir = snapshot.appendingPathComponent(model.rawValue)
+            if FileManager.default.fileExists(atPath: modelDir.path) {
+                return true
+            }
+        }
+        return false
     }
 
     func unloadModel() {
