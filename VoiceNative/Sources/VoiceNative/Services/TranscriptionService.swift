@@ -95,25 +95,31 @@ final class TranscriptionService: @unchecked Sendable {
         await MainActor.run { isTranscribing = true }
         defer { Task { @MainActor in self.isTranscribing = false } }
 
-        var options = DecodingOptions(task: .transcribe, language: "en")
+        var options = DecodingOptions(
+            task: .transcribe,
+            language: "en",
+            temperature: 0.0,
+            temperatureFallbackCount: 0,    // No fallback loops -- single pass
+            skipSpecialTokens: true,
+            withoutTimestamps: true,         // Skip timestamp prediction entirely
+            clipTimestamps: [0],
+            suppressBlank: true,
+            concurrentWorkerCount: 4
+        )
 
-        // Instructional initial prompt for technical content
-        options.clipTimestamps = [0]
-
-        // Scale dictionary injection by audio duration
-        if audioDuration > 3.0, !dictionary.isEmpty, let tokenizer = whisperKit.tokenizer {
-            let termsToUse = Array(dictionary.prefix(20))
+        // Only inject dictionary for longer audio (>10s) to reduce decoding overhead
+        if audioDuration > 10.0, !dictionary.isEmpty, let tokenizer = whisperKit.tokenizer {
+            let termsToUse = Array(dictionary.prefix(15))
             let promptText = "Technical instruction: " + termsToUse.joined(separator: ", ")
             let tokens = tokenizer.encode(text: " " + promptText)
             options.promptTokens = tokens.filter { $0 < tokenizer.specialTokens.specialTokenBegin }
             options.usePrefillPrompt = true
-            print("[Transcription] Using \(options.promptTokens?.count ?? 0) prompt tokens (audio > 3s)")
+            print("[Transcription] Using \(options.promptTokens?.count ?? 0) prompt tokens (audio > 10s)")
         } else if let tokenizer = whisperKit.tokenizer {
-            let promptText = "Technical instruction for software engineering:"
+            let promptText = "Technical instruction:"
             let tokens = tokenizer.encode(text: " " + promptText)
             options.promptTokens = tokens.filter { $0 < tokenizer.specialTokens.specialTokenBegin }
             options.usePrefillPrompt = true
-            print("[Transcription] Using minimal instructional prompt (audio <= 3s or no dictionary)")
         }
 
         let timeoutSeconds = max(30.0, audioDuration * 3.0)
