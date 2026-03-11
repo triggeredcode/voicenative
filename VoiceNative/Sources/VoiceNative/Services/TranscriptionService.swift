@@ -36,7 +36,7 @@ final class TranscriptionService: @unchecked Sendable {
 
         isModelLoaded = false
         loadProgress = 0
-        loadStatus = cached ? "Loading model..." : "Downloading model (~\(model.sizeEstimate))..."
+        loadStatus = cached ? "Loading model (first load may take ~60s for ANE optimization)..." : "Downloading model (~\(model.sizeEstimate))..."
         currentModel = model.rawValue
 
         print("[Transcription] Loading model: \(model.rawValue) (cached: \(cached))")
@@ -79,7 +79,11 @@ final class TranscriptionService: @unchecked Sendable {
         loadProgress = 1.0
         loadStatus = "Ready"
 
-        print("[Transcription] Model loaded in \(String(format: "%.2f", loadTime))s (cached: \(cached))")
+        if loadTime > 30 {
+            print("[Transcription] Model loaded in \(String(format: "%.2f", loadTime))s (ANE compilation -- one-time cost, next load will be ~5s)")
+        } else {
+            print("[Transcription] Model loaded in \(String(format: "%.2f", loadTime))s (cached: \(cached))")
+        }
     }
 
     func ensureModelReady(_ model: WhisperModel) async throws {

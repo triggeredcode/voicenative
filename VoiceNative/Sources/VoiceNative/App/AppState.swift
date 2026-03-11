@@ -62,7 +62,7 @@ final class AppState {
     private var keepaliveTimer: Task<Void, Never>?
     private var audioDeviceObserver: NSObjectProtocol?
     private var wakeObserver: NSObjectProtocol?
-    private var settingsWindowController: NSWindowController?
+    private var settingsWindow: NSWindow?
 
     // Streaming pipeline state
     private var pipelineChunks: [(text: String, endRawIndex: Int)] = []
@@ -105,26 +105,33 @@ final class AppState {
 
     var isRecordingAvailable: Bool { phase == .ready }
 
-    // MARK: - Settings Window (manual NSWindow -- openWindow broken in MenuBarExtra)
+    // MARK: - Settings Window
 
     func showSettings() {
-        if let window = settingsWindowController?.window, window.isVisible {
-            window.makeKeyAndOrderFront(nil)
+        if #available(macOS 14.0, *) {
+            NSApp.activate()
+        } else {
             NSApp.activate(ignoringOtherApps: true)
+        }
+
+        if let window = settingsWindow, window.isVisible {
+            window.makeKeyAndOrderFront(nil)
             return
         }
 
-        let view = SettingsView().environment(self)
-        let hosting = NSHostingController(rootView: view)
-        let window = NSWindow(contentViewController: hosting)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 380),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
         window.title = "VoiceNative Settings"
-        window.styleMask = [.titled, .closable]
-        window.setContentSize(NSSize(width: 500, height: 380))
+        window.contentView = NSHostingView(rootView: SettingsView().environment(self))
+        window.isReleasedWhenClosed = false
         window.center()
+        window.makeKeyAndOrderFront(nil)
 
-        settingsWindowController = NSWindowController(window: window)
-        settingsWindowController?.showWindow(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        settingsWindow = window
     }
 
     // MARK: - Lifecycle
