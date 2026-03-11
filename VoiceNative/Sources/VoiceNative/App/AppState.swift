@@ -344,7 +344,7 @@ final class AppState {
             var lastProcessedRaw = 0
 
             while !Task.isCancelled && phase == .listening {
-                try? await Task.sleep(for: .seconds(3))
+                try? await Task.sleep(for: .seconds(5))
                 guard !Task.isCancelled, phase == .listening else { break }
 
                 let currentCount = audio.currentRawSampleCount
@@ -356,19 +356,28 @@ final class AppState {
                 let processed = audio.prepareChunk(toProcess)
                 let duration = Double(processed.count) / Constants.Audio.targetSampleRate
 
-                guard duration >= 5.0 else { continue }
+                guard duration >= 5.0 else {
+                    lastProcessedRaw += chunkSamples
+                    continue
+                }
 
-                print("[Pipeline] Transcribing chunk at raw[\(lastProcessedRaw)..+\(chunkSamples)] (\(String(format: "%.1f", duration))s)")
+                let chunkStart = CFAbsoluteTimeGetCurrent()
+                print("[Pipeline] Transcribing chunk \(pipelineChunks.count + 1) at raw[\(lastProcessedRaw)..+\(chunkSamples)] (\(String(format: "%.1f", duration))s)")
+
+                // Always advance past this chunk to prevent re-transcribing the same audio
+                lastProcessedRaw += chunkSamples
 
                 do {
                     let text = try await transcription.transcribeChunk(
                         audioBuffer: processed,
                         audioDuration: duration
                     )
+                    let elapsed = CFAbsoluteTimeGetCurrent() - chunkStart
                     if !text.isEmpty {
-                        pipelineChunks.append((text: text, endRawIndex: lastProcessedRaw + chunkSamples))
-                        lastProcessedRaw += chunkSamples
-                        print("[Pipeline] Chunk \(pipelineChunks.count) done: \"\(text.prefix(80))...\"")
+                        pipelineChunks.append((text: text, endRawIndex: lastProcessedRaw))
+                        print("[Pipeline] Chunk \(pipelineChunks.count) done in \(String(format: "%.1f", elapsed))s: \"\(text.prefix(80))...\"")
+                    } else {
+                        print("[Pipeline] Chunk returned empty in \(String(format: "%.1f", elapsed))s, skipping")
                     }
                 } catch {
                     print("[Pipeline] Chunk error: \(error)")

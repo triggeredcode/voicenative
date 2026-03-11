@@ -27,13 +27,14 @@ struct MenuBarPopover: View {
                 .font(.headline)
             Spacer()
             Button {
+                print("[MenuBar] Settings button pressed")
                 NSApp.activate(ignoringOtherApps: true)
                 openWindow(id: "settings")
             } label: {
                 Image(systemName: "gear")
-                    .foregroundStyle(.secondary)
+                    .font(.body)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.borderless)
         }
     }
 
@@ -145,6 +146,14 @@ struct MenuBarPopover: View {
             Button("History") {
                 NSApp.activate(ignoringOtherApps: true)
                 openWindow(id: "history")
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            Button("Settings") {
+                NSApp.activate(ignoringOtherApps: true)
+                openWindow(id: "settings")
             }
             .buttonStyle(.plain)
 
