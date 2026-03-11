@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MenuBarPopover: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.openWindow) private var openWindow
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -10,6 +11,8 @@ struct MenuBarPopover: View {
             Divider()
             
             statusSection
+            
+            recordButton
             
             if !appState.lastTranscription.isEmpty {
                 Divider()
@@ -53,6 +56,14 @@ struct MenuBarPopover: View {
                     .progressViewStyle(.linear)
             }
             
+            if appState.phase == .error {
+                Button("Retry") {
+                    appState.retryModelLoad()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+            
             Text("Right Shift to record")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
@@ -71,6 +82,24 @@ struct MenuBarPopover: View {
             return .orange
         case .error:
             return .red
+        }
+    }
+    
+    @ViewBuilder
+    private var recordButton: some View {
+        if appState.phase == .ready || appState.phase == .listening {
+            Button {
+                appState.toggleRecording()
+            } label: {
+                HStack {
+                    Image(systemName: appState.phase == .listening ? "stop.fill" : "mic.fill")
+                    Text(appState.phase == .listening ? "Stop Recording" : "Start Recording")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(appState.phase == .listening ? .red : .accentColor)
+            .controlSize(.large)
         }
     }
     
@@ -102,6 +131,7 @@ struct MenuBarPopover: View {
     private var footerSection: some View {
         HStack {
             Button("History") {
+                openWindow(id: "history")
             }
             .buttonStyle(.plain)
             
