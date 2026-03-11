@@ -35,10 +35,12 @@ struct VoiceNativeApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        Settings {
+        Window("Settings", id: "settings") {
             SettingsView()
                 .environment(appState)
         }
+        .windowResizability(.contentSize)
+        .defaultSize(width: 500, height: 400)
 
         Window("History", id: "history") {
             HistoryView()

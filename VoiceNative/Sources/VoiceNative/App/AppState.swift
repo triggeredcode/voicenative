@@ -63,6 +63,10 @@ final class AppState {
     private var audioDeviceObserver: NSObjectProtocol?
     private var wakeObserver: NSObjectProtocol?
 
+    // Streaming pipeline state
+    private var pipelineChunks: [(text: String, endRawIndex: Int)] = []
+    private var pipelineTask: Task<Void, Never>?
+
     // MARK: - Computed Properties
 
     var menuBarIcon: String {
@@ -123,6 +127,7 @@ final class AppState {
 
     func shutdown() {
         if phase == .listening {
+            pipelineTask?.cancel()
             let _ = audio.stop()
             audio.reset()
         }
@@ -245,9 +250,8 @@ final class AppState {
 
         vad.reset()
         vad.resetCalibration()
-
-        // In toggle mode, disable VAD auto-stop
         vad.autoStopEnabled = triggerMode == .holdToTalk
+        pipelineChunks = []
 
         do {
             try audio.start()
@@ -255,6 +259,7 @@ final class AppState {
             recordingElapsed = 0
             if soundFeedbackEnabled { SoundFeedback.playStartRecording() }
             startRecordingTimer()
+            startTranscriptionPipeline()
         } catch {
             setError("Failed to start recording: \(error.localizedDescription)")
         }
@@ -270,12 +275,28 @@ final class AppState {
         phase = .processing
         if soundFeedbackEnabled { SoundFeedback.playStopRecording() }
 
-        Task { await performTranscription(audioBuffer: audioBuffer, audioDuration: audioDuration) }
+        Task {
+            // Wait for any in-flight pipeline chunk to finish (provides more pre-transcribed text)
+            pipelineTask?.cancel()
+            await pipelineTask?.value
+
+            let chunks = pipelineChunks
+            if !chunks.isEmpty {
+                print("[AppState] Pipeline completed \(chunks.count) chunks before stop")
+            }
+
+            await performFinalTranscription(
+                fullBuffer: audioBuffer,
+                audioDuration: audioDuration,
+                completedChunks: chunks
+            )
+        }
     }
 
     func cancelRecording() {
         guard phase == .listening else { return }
 
+        pipelineTask?.cancel()
         recordingTimer?.cancel()
         let _ = audio.stop()
         audio.reset()
@@ -312,9 +333,58 @@ final class AppState {
         }
     }
 
-    // MARK: - Transcription
+    // MARK: - Streaming Transcription Pipeline
 
-    private func performTranscription(audioBuffer: [Float], audioDuration: TimeInterval) async {
+    /// Background pipeline: transcribe 30s chunks while recording continues.
+    /// When the user stops, only the remaining audio needs transcription.
+    private func startTranscriptionPipeline() {
+        pipelineTask?.cancel()
+        pipelineTask = Task {
+            let chunkSamples = Int(audio.nativeSampleRate * 30)
+            var lastProcessedRaw = 0
+
+            while !Task.isCancelled && phase == .listening {
+                try? await Task.sleep(for: .seconds(3))
+                guard !Task.isCancelled, phase == .listening else { break }
+
+                let currentCount = audio.currentRawSampleCount
+                let newSamples = currentCount - lastProcessedRaw
+                guard newSamples >= chunkSamples else { continue }
+
+                let rawChunk = audio.snapshotRawSamples(from: lastProcessedRaw)
+                let toProcess = Array(rawChunk.prefix(chunkSamples))
+                let processed = audio.prepareChunk(toProcess)
+                let duration = Double(processed.count) / Constants.Audio.targetSampleRate
+
+                guard duration >= 5.0 else { continue }
+
+                print("[Pipeline] Transcribing chunk at raw[\(lastProcessedRaw)..+\(chunkSamples)] (\(String(format: "%.1f", duration))s)")
+
+                do {
+                    let text = try await transcription.transcribeChunk(
+                        audioBuffer: processed,
+                        audioDuration: duration
+                    )
+                    if !text.isEmpty {
+                        pipelineChunks.append((text: text, endRawIndex: lastProcessedRaw + chunkSamples))
+                        lastProcessedRaw += chunkSamples
+                        print("[Pipeline] Chunk \(pipelineChunks.count) done: \"\(text.prefix(80))...\"")
+                    }
+                } catch {
+                    print("[Pipeline] Chunk error: \(error)")
+                }
+            }
+            print("[Pipeline] Exited (\(pipelineChunks.count) chunks completed)")
+        }
+    }
+
+    // MARK: - Final Transcription
+
+    private func performFinalTranscription(
+        fullBuffer: [Float],
+        audioDuration: TimeInterval,
+        completedChunks: [(text: String, endRawIndex: Int)]
+    ) async {
         let pipelineStart = CFAbsoluteTimeGetCurrent()
 
         let minDuration = Constants.Recording.minimumDurationForTranscription
@@ -333,14 +403,41 @@ final class AppState {
             return
         }
 
-        let dictionary = TechnicalDictionary.allTerms(customStorage: customDictionaryTerms)
-
         do {
-            let text = try await transcription.transcribe(
-                audioBuffer: audioBuffer,
-                audioDuration: audioDuration,
-                dictionary: dictionary
-            )
+            let text: String
+
+            if completedChunks.isEmpty {
+                // No pipeline results -- transcribe everything
+                print("[AppState] No pipeline chunks, transcribing full \(String(format: "%.1f", audioDuration))s")
+                text = try await transcription.transcribe(
+                    audioBuffer: fullBuffer,
+                    audioDuration: audioDuration,
+                    dictionary: TechnicalDictionary.allTerms(customStorage: customDictionaryTerms)
+                )
+            } else {
+                // Pipeline completed chunks -- only transcribe the remaining tail
+                let lastRawEnd = completedChunks.last!.endRawIndex
+                let ratio = Constants.Audio.targetSampleRate / audio.nativeSampleRate
+                let processedOffset = min(Int(Double(lastRawEnd) * ratio), fullBuffer.count)
+
+                let pipelineTexts = completedChunks.map(\.text)
+                let remainingBuffer = Array(fullBuffer[processedOffset...])
+                let remainingDuration = Double(remainingBuffer.count) / Constants.Audio.targetSampleRate
+
+                print("[AppState] Pipeline had \(completedChunks.count) chunks, remaining: \(String(format: "%.1f", remainingDuration))s")
+
+                var remainingText = ""
+                if remainingDuration >= 1.0 && !remainingBuffer.isEmpty {
+                    remainingText = try await transcription.transcribe(
+                        audioBuffer: remainingBuffer,
+                        audioDuration: remainingDuration,
+                        dictionary: TechnicalDictionary.allTerms(customStorage: customDictionaryTerms)
+                    )
+                }
+
+                let allParts = pipelineTexts + (remainingText.isEmpty ? [] : [remainingText])
+                text = allParts.joined(separator: " ")
+            }
 
             audio.reset()
 
@@ -350,7 +447,7 @@ final class AppState {
             }
 
             let pipelineTime = CFAbsoluteTimeGetCurrent() - pipelineStart
-            print("[AppState] Full pipeline: \(String(format: "%.2f", pipelineTime))s for \(String(format: "%.1f", audioDuration))s audio")
+            print("[AppState] Final pipeline: \(String(format: "%.2f", pipelineTime))s for \(String(format: "%.1f", audioDuration))s audio (after-stop only)")
 
             lastTranscription = text
             injection.inject(text, autoPaste: autoPaste)

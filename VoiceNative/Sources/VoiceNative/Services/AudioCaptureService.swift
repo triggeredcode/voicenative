@@ -11,7 +11,7 @@ final class AudioCaptureService: @unchecked Sendable {
     private(set) var audioDuration: TimeInterval = 0
 
     private var recordingStartTime: Date?
-    private var nativeSampleRate: Double = 48000
+    private(set) var nativeSampleRate: Double = 48000
 
     var onAudioChunk: (@Sendable ([Float]) -> Void)?
 
@@ -120,12 +120,37 @@ final class AudioCaptureService: @unchecked Sendable {
         audioDuration = 0
     }
 
-    /// Returns the current recording duration based on buffer size at native rate.
     var currentRecordingDuration: TimeInterval {
         if isRecording, let start = recordingStartTime {
             return Date().timeIntervalSince(start)
         }
         return 0
+    }
+
+    /// Thread-safe count of raw samples accumulated so far.
+    var currentRawSampleCount: Int {
+        bufferLock.lock()
+        defer { bufferLock.unlock() }
+        return rawBuffer.count
+    }
+
+    /// Copy raw samples from startIndex onward. Safe to call during recording.
+    func snapshotRawSamples(from startIndex: Int) -> [Float] {
+        bufferLock.lock()
+        defer { bufferLock.unlock() }
+        guard startIndex < rawBuffer.count else { return [] }
+        return Array(rawBuffer[startIndex...])
+    }
+
+    /// Convert a raw audio chunk (at native sample rate) to 16kHz normalized audio.
+    func prepareChunk(_ rawSamples: [Float]) -> [Float] {
+        let resampled: [Float]
+        if nativeSampleRate == Constants.Audio.targetSampleRate {
+            resampled = rawSamples
+        } else {
+            resampled = convertToTargetRate(rawSamples)
+        }
+        return normalizeAudio(resampled)
     }
 
     // MARK: - Audio Processing (Accelerate/vDSP)

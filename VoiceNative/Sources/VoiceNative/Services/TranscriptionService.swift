@@ -41,17 +41,19 @@ final class TranscriptionService: @unchecked Sendable {
 
         print("[Transcription] Loading model: \(model.rawValue) (cached: \(cached))")
 
+        // GPU for encoder allows pipeline parallelism with ANE decoder across chunks
+        let compute = ModelComputeOptions(
+            melCompute: .cpuAndGPU,
+            audioEncoderCompute: .cpuAndGPU,
+            textDecoderCompute: .cpuAndNeuralEngine,
+            prefillCompute: .cpuOnly
+        )
+
         let config: WhisperKitConfig
         if let folder = cachedPath {
-            // Load directly from cache -- skip download check entirely
             config = WhisperKitConfig(
                 modelFolder: folder,
-                computeOptions: ModelComputeOptions(
-                    melCompute: .cpuAndGPU,
-                    audioEncoderCompute: .cpuAndNeuralEngine,
-                    textDecoderCompute: .cpuAndNeuralEngine,
-                    prefillCompute: .cpuOnly
-                ),
+                computeOptions: compute,
                 verbose: false,
                 logLevel: .error,
                 prewarm: false,
@@ -61,12 +63,7 @@ final class TranscriptionService: @unchecked Sendable {
         } else {
             config = WhisperKitConfig(
                 model: model.rawValue,
-                computeOptions: ModelComputeOptions(
-                    melCompute: .cpuAndGPU,
-                    audioEncoderCompute: .cpuAndNeuralEngine,
-                    textDecoderCompute: .cpuAndNeuralEngine,
-                    prefillCompute: .cpuOnly
-                ),
+                computeOptions: compute,
                 verbose: false,
                 logLevel: .error,
                 prewarm: false,
@@ -135,9 +132,8 @@ final class TranscriptionService: @unchecked Sendable {
         isTranscribing = true
         defer { isTranscribing = false }
 
-        // VAD chunking for audio > 30s: splits at silence, transcribes chunks in parallel
         let useChunking = sampleCount > 480_000
-        let options = DecodingOptions(
+        var options = DecodingOptions(
             task: .transcribe,
             language: "en",
             temperature: 0.0,
@@ -147,6 +143,14 @@ final class TranscriptionService: @unchecked Sendable {
             suppressBlank: true,
             chunkingStrategy: useChunking ? .vad : nil
         )
+
+        // Lightweight technical prompt -- biases decoder toward code/engineering terms
+        if let tokenizer = whisperKit.tokenizer {
+            let prompt = "Technical software engineering dictation."
+            let tokens = tokenizer.encode(text: " " + prompt)
+            options.promptTokens = tokens.filter { $0 < tokenizer.specialTokens.specialTokenBegin }
+            options.usePrefillPrompt = true
+        }
 
         if useChunking {
             print("[Transcription] VAD chunking enabled for \(String(format: "%.0f", audioDuration))s audio")
@@ -184,6 +188,34 @@ final class TranscriptionService: @unchecked Sendable {
         print("[Transcription] Result (\(filteredText.count) chars): \"\(filteredText.prefix(200))\"")
 
         return filteredText
+    }
+
+    /// Transcribe a single chunk during recording. Lighter than full transcribe -- no timeout, no hallucination filter.
+    func transcribeChunk(audioBuffer: [Float], audioDuration: TimeInterval) async throws -> String {
+        guard let whisperKit, isModelLoaded else {
+            throw TranscriptionError.modelNotLoaded
+        }
+        guard !audioBuffer.isEmpty else { return "" }
+
+        var options = DecodingOptions(
+            task: .transcribe,
+            language: "en",
+            temperature: 0.0,
+            temperatureFallbackCount: 0,
+            skipSpecialTokens: true,
+            withoutTimestamps: true,
+            suppressBlank: true
+        )
+
+        if let tokenizer = whisperKit.tokenizer {
+            let prompt = "Technical software engineering dictation."
+            let tokens = tokenizer.encode(text: " " + prompt)
+            options.promptTokens = tokens.filter { $0 < tokenizer.specialTokens.specialTokenBegin }
+            options.usePrefillPrompt = true
+        }
+
+        let results = try await whisperKit.transcribe(audioArray: audioBuffer, decodeOptions: options)
+        return results.compactMap(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Returns the cached model folder path if it exists, nil otherwise.
