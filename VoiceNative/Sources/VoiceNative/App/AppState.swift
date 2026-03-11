@@ -26,9 +26,10 @@ final class AppState {
     let vad = VADService()
     let hud = HUDOverlayController()
     let permissions = PermissionManager()
+    let modelManager = ModelManager()
     
     @ObservationIgnored
-    @AppStorage("selectedModel") private var selectedModel = WhisperModel.largev3Turbo
+    @AppStorage("selectedModel") private var selectedModel = WhisperModel.largev3TurboQuantized
     
     @ObservationIgnored
     @AppStorage("autoPaste") private var autoPaste = true
@@ -129,9 +130,10 @@ final class AppState {
     
     private func loadModel() async {
         phase = .modelLoading
+        modelLoadProgress = 0
         
         do {
-            try await transcription.loadModel(selectedModel)
+            try await transcription.loadModel(selectedModel, modelManager: modelManager)
             phase = .ready
             hotkey.startListening()
         } catch {

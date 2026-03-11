@@ -9,21 +9,79 @@ final class TranscriptionService: @unchecked Sendable {
     private(set) var isModelLoaded = false
     private(set) var isTranscribing = false
     private(set) var loadProgress: Double = 0
+    private(set) var loadStatus: String = ""
     private(set) var currentModel: String = ""
     
-    func loadModel(_ model: WhisperModel) async throws {
+    func loadModel(_ model: WhisperModel, modelManager: ModelManager) async throws {
         await MainActor.run {
             isModelLoaded = false
             loadProgress = 0
+            loadStatus = "Checking model..."
             currentModel = model.rawValue
         }
         
-        let config = WhisperKitConfig(model: model.rawValue)
+        let modelFolder: URL
+        if let existingFolder = await modelManager.modelFolderPath(for: model) {
+            modelFolder = existingFolder
+            await MainActor.run {
+                loadStatus = "Model found locally"
+                loadProgress = 0.1
+            }
+        } else {
+            await MainActor.run {
+                loadStatus = "Downloading model..."
+            }
+            modelFolder = try await modelManager.downloadModel(model)
+            await MainActor.run {
+                loadProgress = 0.5
+            }
+        }
+        
+        await MainActor.run {
+            loadStatus = "Loading model into memory..."
+            loadProgress = 0.6
+        }
+        
+        let config = WhisperKitConfig(
+            modelFolder: modelFolder.path,
+            verbose: false,
+            logLevel: .error,
+            prewarm: true,
+            load: true
+        )
+        
         whisperKit = try await WhisperKit(config)
         
         await MainActor.run {
             isModelLoaded = true
             loadProgress = 1.0
+            loadStatus = "Ready"
+        }
+    }
+    
+    func loadModelDirect(_ modelName: String) async throws {
+        await MainActor.run {
+            isModelLoaded = false
+            loadProgress = 0
+            loadStatus = "Downloading and loading model..."
+            currentModel = modelName
+        }
+        
+        let config = WhisperKitConfig(
+            model: modelName,
+            verbose: true,
+            logLevel: .info,
+            prewarm: true,
+            load: true,
+            download: true
+        )
+        
+        whisperKit = try await WhisperKit(config)
+        
+        await MainActor.run {
+            isModelLoaded = true
+            loadProgress = 1.0
+            loadStatus = "Ready"
         }
     }
     
@@ -58,6 +116,7 @@ final class TranscriptionService: @unchecked Sendable {
         whisperKit = nil
         isModelLoaded = false
         loadProgress = 0
+        loadStatus = ""
         currentModel = ""
     }
 }
@@ -65,6 +124,7 @@ final class TranscriptionService: @unchecked Sendable {
 enum TranscriptionError: LocalizedError {
     case modelNotLoaded
     case transcriptionFailed
+    case downloadFailed(String)
     
     var errorDescription: String? {
         switch self {
@@ -72,6 +132,8 @@ enum TranscriptionError: LocalizedError {
             return "Whisper model is not loaded"
         case .transcriptionFailed:
             return "Transcription failed"
+        case .downloadFailed(let reason):
+            return "Model download failed: \(reason)"
         }
     }
 }

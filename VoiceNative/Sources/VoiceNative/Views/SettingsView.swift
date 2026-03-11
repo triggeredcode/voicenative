@@ -62,7 +62,7 @@ struct GeneralSettingsTab: View {
 }
 
 struct TranscriptionSettingsTab: View {
-    @AppStorage("selectedModel") private var selectedModel = WhisperModel.largev3Turbo
+    @AppStorage("selectedModel") private var selectedModel = WhisperModel.largev3TurboQuantized
     @AppStorage("silenceTimeout") private var silenceTimeout = 1.5
     @AppStorage("vadSensitivity") private var vadSensitivity = VADSensitivity.medium
     
@@ -70,9 +70,25 @@ struct TranscriptionSettingsTab: View {
         Form {
             Section {
                 Picker("Model", selection: $selectedModel) {
-                    Text("Large v3 Turbo (Recommended)").tag(WhisperModel.largev3Turbo)
-                    Text("Distil Large v3").tag(WhisperModel.distilLargev3)
+                    ForEach(WhisperModel.allCases, id: \.self) { model in
+                        HStack {
+                            Text(model.displayName)
+                            if model.isRecommended {
+                                Text("Recommended")
+                                    .font(.caption2)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(.blue.opacity(0.2))
+                                    .cornerRadius(4)
+                            }
+                        }
+                        .tag(model)
+                    }
                 }
+                
+                Text("Restart required after changing model")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             
             Section {
