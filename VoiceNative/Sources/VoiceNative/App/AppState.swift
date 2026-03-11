@@ -191,7 +191,12 @@ final class AppState {
         keepaliveTimer = Task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(120))
-                guard !Task.isCancelled, phase == .ready else { continue }
+                guard !Task.isCancelled else { continue }
+                // Only prewarm when truly idle -- not recording, not processing, not loading
+                guard phase == .ready, !transcription.isTranscribing else {
+                    print("[AppState] Keepalive skipped (phase=\(phase.rawValue))")
+                    continue
+                }
                 await transcription.prewarm()
             }
         }
@@ -416,7 +421,10 @@ final class AppState {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                guard let self, self.phase == .ready else { return }
+                guard let self else { return }
+                // Delay 3s after wake to let system settle, then only prewarm if idle
+                try? await Task.sleep(for: .seconds(3))
+                guard self.phase == .ready, !self.transcription.isTranscribing else { return }
                 print("[AppState] Woke from sleep, prewarming model...")
                 await self.transcription.prewarm()
             }

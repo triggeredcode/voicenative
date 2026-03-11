@@ -156,25 +156,43 @@ final class TranscriptionService: @unchecked Sendable {
         return filteredText
     }
 
-    /// Check if model files exist in WhisperKit's HuggingFace cache.
-    /// Cache path: ~/.cache/huggingface/hub/models--argmaxinc--whisperkit-coreml/
+    /// Check if model files exist in any of WhisperKit's known cache locations.
     private func isModelCached(_ model: WhisperModel) -> Bool {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let cacheBase = home
-            .appendingPathComponent(".cache/huggingface/hub/models--argmaxinc--whisperkit-coreml")
-            .appendingPathComponent("snapshots")
+        let fm = FileManager.default
+        let home = fm.homeDirectoryForCurrentUser
 
-        guard let snapshots = try? FileManager.default.contentsOfDirectory(
-            at: cacheBase,
-            includingPropertiesForKeys: nil
-        ) else { return false }
+        // WhisperKit may cache in multiple locations depending on how it's invoked
+        let possibleBases = [
+            home.appendingPathComponent(".cache/huggingface/hub/models--argmaxinc--whisperkit-coreml/snapshots"),
+            home.appendingPathComponent("Library/Caches/com.apple.nsurlsessiond/huggingface/models--argmaxinc--whisperkit-coreml/snapshots"),
+        ]
 
-        for snapshot in snapshots {
-            let modelDir = snapshot.appendingPathComponent(model.rawValue)
-            if FileManager.default.fileExists(atPath: modelDir.path) {
-                return true
+        for base in possibleBases {
+            guard let snapshots = try? fm.contentsOfDirectory(at: base, includingPropertiesForKeys: nil) else {
+                continue
+            }
+            for snapshot in snapshots {
+                let modelDir = snapshot.appendingPathComponent(model.rawValue)
+                if fm.fileExists(atPath: modelDir.path) {
+                    return true
+                }
             }
         }
+
+        // Also check if WhisperKit stored it under its default compiled path
+        let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        if let appSupport {
+            let wkPath = appSupport.appendingPathComponent("huggingface/models--argmaxinc--whisperkit-coreml/snapshots")
+            if let snapshots = try? fm.contentsOfDirectory(at: wkPath, includingPropertiesForKeys: nil) {
+                for snapshot in snapshots {
+                    let modelDir = snapshot.appendingPathComponent(model.rawValue)
+                    if fm.fileExists(atPath: modelDir.path) {
+                        return true
+                    }
+                }
+            }
+        }
+
         return false
     }
 
