@@ -120,12 +120,12 @@ The menu bar icon reflects the current state:
 | Icon | State |
 |------|-------|
 | `mic` | Ready (green dot) |
-| `▮▮▮▮▮` (animated bars) | Recording |
+| `waveform` (animated) | Recording |
 | `⋯` (spinning) | Processing |
 | `↓` (pulsing) | Loading model |
 | `✓` | Transcription copied |
 
-Click the menu bar icon to see the popover with record/stop controls, copy last transcription, and access history and settings.
+Click the menu bar icon to see the popover -- a single row of icon buttons: record/stop, copy last transcription, history, settings, and quit. History includes search and a "Clear All" option to delete all records.
 
 ### Settings
 

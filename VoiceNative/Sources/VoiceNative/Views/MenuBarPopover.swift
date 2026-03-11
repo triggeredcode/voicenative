@@ -4,23 +4,8 @@ struct MenuBarPopover: View {
     @Environment(AppState.self) private var appState
 
     var body: some View {
-        VStack(spacing: 8) {
-            topBar
-            actionArea
-            Divider()
-            bottomBar
-        }
-        .padding(10)
-        .frame(width: 200)
-    }
-
-    // MARK: - Top: status dot + optional timer + settings/quit
-
-    private var topBar: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(statusColor)
-                .frame(width: 8, height: 8)
+        HStack(spacing: 10) {
+            statusDot
 
             if appState.phase == .listening {
                 Text(formattedElapsed)
@@ -28,30 +13,36 @@ struct MenuBarPopover: View {
                     .foregroundStyle(.secondary)
             }
 
-            Spacer()
+            actionButton
 
-            Button { appState.showSettings() } label: {
-                Image(systemName: "gear")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+            if !appState.lastTranscription.isEmpty {
+                iconButton("doc.on.doc") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(appState.lastTranscription, forType: .string)
+                }
+                .help("Copy")
             }
-            .buttonStyle(.plain)
 
-            Button {
+            iconButton("clock.arrow.circlepath") { appState.showHistory() }
+                .help("History")
+
+            iconButton("gear") { appState.showSettings() }
+                .help("Settings")
+
+            iconButton("power", style: .tertiary) {
                 appState.shutdown()
                 NSApplication.shared.terminate(nil)
-            } label: {
-                Image(systemName: "power")
-                    .font(.callout)
-                    .foregroundStyle(.tertiary)
             }
-            .buttonStyle(.plain)
+            .help("Quit")
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
     }
 
-    private var formattedElapsed: String {
-        let elapsed = Int(appState.recordingElapsed)
-        return String(format: "%d:%02d", elapsed / 60, elapsed % 60)
+    private var statusDot: some View {
+        Circle()
+            .fill(statusColor)
+            .frame(width: 8, height: 8)
     }
 
     private var statusColor: Color {
@@ -64,96 +55,40 @@ struct MenuBarPopover: View {
         }
     }
 
-    // MARK: - Center: primary action
+    private var formattedElapsed: String {
+        let elapsed = Int(appState.recordingElapsed)
+        return String(format: "%d:%02d", elapsed / 60, elapsed % 60)
+    }
 
     @ViewBuilder
-    private var actionArea: some View {
+    private var actionButton: some View {
         switch appState.phase {
         case .ready:
-            Button { appState.toggleRecording() } label: {
-                Image(systemName: "mic.fill")
-                    .font(.body)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 32)
-                    .background(.blue.opacity(0.1))
-                    .cornerRadius(8)
-            }
-            .buttonStyle(.plain)
-
+            iconButton("mic.fill", tint: .blue) { appState.toggleRecording() }
         case .listening:
-            HStack(spacing: 6) {
-                Button { appState.toggleRecording() } label: {
-                    Image(systemName: "stop.fill")
-                        .font(.body)
-                        .foregroundStyle(.red)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 32)
-                        .background(.red.opacity(0.1))
-                        .cornerRadius(8)
-                }
-                .buttonStyle(.plain)
-
-                Button { appState.cancelRecording() } label: {
-                    Image(systemName: "xmark")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 32, height: 32)
-                        .background(.quaternary.opacity(0.3))
-                        .cornerRadius(8)
-                }
-                .buttonStyle(.plain)
-            }
-
+            iconButton("stop.fill", tint: .red) { appState.toggleRecording() }
         case .processing, .modelLoading:
             ProgressView()
                 .controlSize(.small)
-                .frame(maxWidth: .infinity)
-                .frame(height: 32)
-
+                .frame(width: 16, height: 16)
         case .error:
-            Button { appState.retryModelLoad() } label: {
-                Image(systemName: "arrow.clockwise")
-                    .font(.body)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 32)
-                    .background(.orange.opacity(0.1))
-                    .cornerRadius(8)
-            }
-            .buttonStyle(.plain)
-
+            iconButton("arrow.clockwise", tint: .orange) { appState.retryModelLoad() }
         case .idle:
             EmptyView()
         }
     }
 
-    // MARK: - Bottom: copy + history (same visual weight as top bar)
-
-    private var bottomBar: some View {
-        HStack {
-            if !appState.lastTranscription.isEmpty {
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(appState.lastTranscription, forType: .string)
-                } label: {
-                    Image(systemName: "doc.on.doc")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Copy last transcription")
-            }
-
-            Spacer()
-
-            Button {
-                appState.showHistory()
-            } label: {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help("History")
+    private func iconButton(
+        _ symbol: String,
+        tint: Color? = nil,
+        style: HierarchicalShapeStyle = .secondary,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.callout)
+                .foregroundStyle(tint ?? Color(.secondaryLabelColor))
         }
+        .buttonStyle(.plain)
     }
 }
