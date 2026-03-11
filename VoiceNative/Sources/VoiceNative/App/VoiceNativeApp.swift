@@ -24,16 +24,11 @@ struct VoiceNativeApp: App {
             MenuBarLabel(appState: appState)
                 .task {
                     guard !appState.hasBootstrapped else { return }
-                    appState.setModelContext(modelContainer.mainContext)
+                    appState.setModelContext(modelContainer.mainContext, container: modelContainer)
                     await appState.initialize()
                 }
         }
         .menuBarExtraStyle(.window)
-
-        Window("History", id: "history") {
-            HistoryView()
-                .modelContainer(modelContainer)
-        }
 
         Window("Setup", id: "onboarding") {
             OnboardingView()
@@ -43,7 +38,7 @@ struct VoiceNativeApp: App {
     }
 }
 
-// MARK: - Menu Bar Label
+// MARK: - Menu Bar Label (SF Symbols only -- custom shapes don't render here)
 
 struct MenuBarLabel: View {
     let appState: AppState
@@ -67,7 +62,8 @@ struct MenuBarLabel: View {
     private var phaseIcon: some View {
         switch appState.phase {
         case .listening:
-            RecordingBarsView()
+            Image(systemName: "waveform")
+                .symbolEffect(.variableColor.iterative.reversing, isActive: true)
         case .processing:
             Image(systemName: "ellipsis.circle")
                 .symbolEffect(.variableColor.iterative, isActive: true)
@@ -82,36 +78,5 @@ struct MenuBarLabel: View {
         case .error:
             Image(systemName: "exclamationmark.triangle")
         }
-    }
-}
-
-// MARK: - Recording Waveform Bars (shown in menu bar during recording)
-
-struct RecordingBarsView: View {
-    @State private var wavePhase: Double = 0
-    let timer = Timer.publish(every: 0.08, on: .main, in: .common).autoconnect()
-    private let barCount = 7
-
-    var body: some View {
-        HStack(spacing: 1) {
-            ForEach(0..<barCount, id: \.self) { i in
-                RoundedRectangle(cornerRadius: 0.5)
-                    .frame(width: 2, height: barHeight(for: i))
-            }
-        }
-        .frame(width: 18, height: 16)
-        .onReceive(timer) { _ in
-            withAnimation(.easeInOut(duration: 0.08)) {
-                wavePhase += 0.4
-            }
-        }
-    }
-
-    private func barHeight(for index: Int) -> CGFloat {
-        let t = Double(index) / Double(barCount - 1)
-        let wave1 = sin(wavePhase + t * .pi * 2) * 0.35
-        let wave2 = sin(wavePhase * 1.4 + t * .pi * 3) * 0.25
-        let combined = (wave1 + wave2 + 1.0) / 2.0
-        return 3 + CGFloat(combined) * 10
     }
 }

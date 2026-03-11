@@ -2,21 +2,19 @@ import SwiftUI
 
 struct MenuBarPopover: View {
     @Environment(AppState.self) private var appState
-    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             topBar
             actionArea
-            if !appState.lastTranscription.isEmpty {
-                bottomBar
-            }
+            Divider()
+            bottomBar
         }
-        .padding(12)
-        .frame(width: 180)
+        .padding(10)
+        .frame(width: 200)
     }
 
-    // MARK: - Top: status dot + optional timer + settings/quit icons
+    // MARK: - Top: status dot + optional timer + settings/quit
 
     private var topBar: some View {
         HStack(spacing: 6) {
@@ -34,7 +32,7 @@ struct MenuBarPopover: View {
 
             Button { appState.showSettings() } label: {
                 Image(systemName: "gear")
-                    .font(.caption2)
+                    .font(.callout)
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
@@ -44,7 +42,7 @@ struct MenuBarPopover: View {
                 NSApplication.shared.terminate(nil)
             } label: {
                 Image(systemName: "power")
-                    .font(.caption2)
+                    .font(.callout)
                     .foregroundStyle(.tertiary)
             }
             .buttonStyle(.plain)
@@ -74,9 +72,9 @@ struct MenuBarPopover: View {
         case .ready:
             Button { appState.toggleRecording() } label: {
                 Image(systemName: "mic.fill")
-                    .font(.title2)
+                    .font(.body)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 38)
+                    .frame(height: 32)
                     .background(.blue.opacity(0.1))
                     .cornerRadius(8)
             }
@@ -86,10 +84,10 @@ struct MenuBarPopover: View {
             HStack(spacing: 6) {
                 Button { appState.toggleRecording() } label: {
                     Image(systemName: "stop.fill")
-                        .font(.title2)
+                        .font(.body)
                         .foregroundStyle(.red)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 38)
+                        .frame(height: 32)
                         .background(.red.opacity(0.1))
                         .cornerRadius(8)
                 }
@@ -97,9 +95,9 @@ struct MenuBarPopover: View {
 
                 Button { appState.cancelRecording() } label: {
                     Image(systemName: "xmark")
-                        .font(.body)
+                        .font(.callout)
                         .foregroundStyle(.secondary)
-                        .frame(width: 38, height: 38)
+                        .frame(width: 32, height: 32)
                         .background(.quaternary.opacity(0.3))
                         .cornerRadius(8)
                 }
@@ -110,14 +108,14 @@ struct MenuBarPopover: View {
             ProgressView()
                 .controlSize(.small)
                 .frame(maxWidth: .infinity)
-                .frame(height: 38)
+                .frame(height: 32)
 
         case .error:
             Button { appState.retryModelLoad() } label: {
                 Image(systemName: "arrow.clockwise")
                     .font(.body)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 38)
+                    .frame(height: 32)
                     .background(.orange.opacity(0.1))
                     .cornerRadius(8)
             }
@@ -128,29 +126,30 @@ struct MenuBarPopover: View {
         }
     }
 
-    // MARK: - Bottom: copy + history icons
+    // MARK: - Bottom: copy + history (same visual weight as top bar)
 
     private var bottomBar: some View {
         HStack {
-            Button {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(appState.lastTranscription, forType: .string)
-            } label: {
-                Image(systemName: "doc.on.doc")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            if !appState.lastTranscription.isEmpty {
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(appState.lastTranscription, forType: .string)
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Copy last transcription")
             }
-            .buttonStyle(.plain)
-            .help("Copy last transcription")
 
             Spacer()
 
             Button {
-                NSApp.activate(ignoringOtherApps: true)
-                openWindow(id: "history")
+                appState.showHistory()
             } label: {
                 Image(systemName: "clock.arrow.circlepath")
-                    .font(.caption)
+                    .font(.callout)
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)

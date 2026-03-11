@@ -57,12 +57,14 @@ final class AppState {
     @AppStorage("maxRecordingDuration") private var maxRecordingDuration = Constants.Recording.defaultMaxDuration
 
     private var modelContext: ModelContext?
+    private var dataContainer: ModelContainer?
     private var recordingTimer: Task<Void, Never>?
     private var feedbackTimer: Task<Void, Never>?
     private var keepaliveTimer: Task<Void, Never>?
     private var audioDeviceObserver: NSObjectProtocol?
     private var wakeObserver: NSObjectProtocol?
     private var settingsWindow: NSWindow?
+    private var historyWindow: NSWindow?
     private var sourceApp: NSRunningApplication?
 
     // Streaming pipeline state
@@ -109,19 +111,16 @@ final class AppState {
     // MARK: - Settings Window
 
     func showSettings() {
-        // Delay to let MenuBarExtra panel dismiss first
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             guard let self else { return }
 
             NSApp.activate(ignoringOtherApps: true)
 
-            // Reuse only if still visible; closed windows are unreliable to reshow
             if let window = self.settingsWindow, window.isVisible {
                 window.makeKeyAndOrderFront(nil)
                 return
             }
 
-            // Create fresh window
             let window = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 500, height: 380),
                 styleMask: [.titled, .closable],
@@ -140,10 +139,40 @@ final class AppState {
         }
     }
 
+    func showHistory() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            guard let self, let container = self.dataContainer else { return }
+
+            NSApp.activate(ignoringOtherApps: true)
+
+            if let window = self.historyWindow, window.isVisible {
+                window.makeKeyAndOrderFront(nil)
+                return
+            }
+
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 480, height: 400),
+                styleMask: [.titled, .closable, .resizable, .miniaturizable],
+                backing: .buffered,
+                defer: false
+            )
+            window.title = "Transcription History"
+            window.contentView = NSHostingView(rootView: HistoryView().modelContainer(container))
+            window.isReleasedWhenClosed = false
+            window.level = .floating
+            window.center()
+            window.makeKeyAndOrderFront(nil)
+            window.level = .normal
+
+            self.historyWindow = window
+        }
+    }
+
     // MARK: - Lifecycle
 
-    func setModelContext(_ context: ModelContext) {
+    func setModelContext(_ context: ModelContext, container: ModelContainer) {
         self.modelContext = context
+        self.dataContainer = container
     }
 
     func initialize() async {
