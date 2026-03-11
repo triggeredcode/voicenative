@@ -3,6 +3,7 @@ import SwiftUI
 struct MenuBarPopover: View {
     @Environment(AppState.self) private var appState
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -27,8 +28,7 @@ struct MenuBarPopover: View {
                 .font(.headline)
             Spacer()
             Button {
-                NSApp.activate(ignoringOtherApps: true)
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                openSettings()
             } label: {
                 Image(systemName: "gear")
                     .foregroundStyle(.secondary)

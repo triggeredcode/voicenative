@@ -40,6 +40,8 @@ final class HotkeyService {
             callback: hotkeyCallback,
             userInfo: retained.toOpaque()
         ) else {
+            print("[HotkeyService] CGEvent tap creation FAILED -- falling back to global monitor")
+            print("[HotkeyService] Grant Input Monitoring permission in System Settings > Privacy & Security")
             retained.release()
             retainedWrapper = nil
             fallbackToGlobalMonitor()
@@ -55,6 +57,7 @@ final class HotkeyService {
 
         CGEvent.tapEnable(tap: tap, enable: true)
         isListening = true
+        print("[HotkeyService] Event tap active (keyCode=\(triggerKeyCode), mode=\(triggerMode))")
     }
 
     func stopListening() {
@@ -91,6 +94,7 @@ final class HotkeyService {
             }
         }
         isListening = true
+        print("[HotkeyService] Global monitor active (fallback mode)")
     }
 
     fileprivate func handleKeyDown(_ event: NSEvent) {
@@ -111,9 +115,11 @@ final class HotkeyService {
                 isKeyDown = true
                 if !isToggleActive {
                     isToggleActive = true
+                    print("[HotkeyService] Toggle START (keyCode=\(keyCode))")
                     onTriggerStart?()
                 } else {
                     isToggleActive = false
+                    print("[HotkeyService] Toggle STOP (keyCode=\(keyCode))")
                     onTriggerEnd?()
                 }
             } else if !isModifierPressed {
@@ -123,9 +129,11 @@ final class HotkeyService {
         case .holdToTalk:
             if isModifierPressed && !isKeyDown {
                 isKeyDown = true
+                print("[HotkeyService] Hold START (keyCode=\(keyCode))")
                 onTriggerStart?()
             } else if !isModifierPressed && isKeyDown {
                 isKeyDown = false
+                print("[HotkeyService] Hold STOP (keyCode=\(keyCode))")
                 onTriggerEnd?()
             }
         }
