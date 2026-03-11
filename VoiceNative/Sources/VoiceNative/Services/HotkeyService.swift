@@ -5,14 +5,12 @@ import Observation
 
 @Observable
 final class HotkeyService {
-    private var eventTap: CFMachPort?
-    private var runLoopSource: CFRunLoopSource?
     private var globalMonitor: Any?
-    private var retainedWrapper: Unmanaged<HotkeyCallbackWrapper>?
+    private var localMonitor: Any?
 
     private(set) var isListening = false
     private var isKeyDown = false
-    private var isToggleActive = false
+    private(set) var isToggleActive = false
 
     var triggerKeyCode: UInt16 = Constants.Hotkey.rightShiftKeyCode
     var triggerMode: TriggerMode = .toggle
@@ -24,60 +22,38 @@ final class HotkeyService {
     func startListening() {
         guard !isListening else { return }
 
-        let eventMask: CGEventMask =
-            (1 << CGEventType.flagsChanged.rawValue) |
-            (1 << CGEventType.keyDown.rawValue)
-
-        let wrapper = HotkeyCallbackWrapper(service: self)
-        let retained = Unmanaged.passRetained(wrapper)
-        retainedWrapper = retained
-
-        guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
-            eventsOfInterest: eventMask,
-            callback: hotkeyCallback,
-            userInfo: retained.toOpaque()
-        ) else {
-            print("[HotkeyService] CGEvent tap creation FAILED -- falling back to global monitor")
-            print("[HotkeyService] Grant Input Monitoring permission in System Settings > Privacy & Security")
-            retained.release()
-            retainedWrapper = nil
-            fallbackToGlobalMonitor()
-            return
+        // Catches events directed at OTHER apps
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.flagsChanged, .keyDown]) { [weak self] event in
+            self?.handleEvent(event)
         }
 
-        eventTap = tap
-        runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-
-        if let source = runLoopSource {
-            CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
+        // Catches events in OUR app (menu bar popover, settings window, etc.)
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .keyDown]) { [weak self] event in
+            self?.handleEvent(event)
+            return event
         }
 
-        CGEvent.tapEnable(tap: tap, enable: true)
         isListening = true
-        print("[HotkeyService] Event tap active (keyCode=\(triggerKeyCode), mode=\(triggerMode))")
+        print("[HotkeyService] Listening via global+local monitors (keyCode=\(triggerKeyCode), mode=\(triggerMode))")
     }
 
     func stopListening() {
-        if let tap = eventTap {
-            CGEvent.tapEnable(tap: tap, enable: false)
-        }
-        if let source = runLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
-        }
         if let monitor = globalMonitor {
             NSEvent.removeMonitor(monitor)
             globalMonitor = nil
         }
-        retainedWrapper?.release()
-        retainedWrapper = nil
-        eventTap = nil
-        runLoopSource = nil
+        if let monitor = localMonitor {
+            NSEvent.removeMonitor(monitor)
+            localMonitor = nil
+        }
         isListening = false
         isKeyDown = false
         isToggleActive = false
+    }
+
+    /// Call when recording starts externally (UI button) so next Shift press is a STOP
+    func markToggleActive() {
+        isToggleActive = true
     }
 
     func resetToggleState() {
@@ -85,25 +61,24 @@ final class HotkeyService {
         isKeyDown = false
     }
 
-    private func fallbackToGlobalMonitor() {
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.flagsChanged, .keyDown]) { [weak self] event in
-            if event.type == .keyDown {
-                self?.handleKeyDown(event)
-            } else {
-                self?.handleFlagsChanged(event)
-            }
+    private func handleEvent(_ event: NSEvent) {
+        switch event.type {
+        case .keyDown:
+            handleKeyDown(event)
+        case .flagsChanged:
+            handleFlagsChanged(event)
+        default:
+            break
         }
-        isListening = true
-        print("[HotkeyService] Global monitor active (fallback mode)")
     }
 
-    fileprivate func handleKeyDown(_ event: NSEvent) {
+    private func handleKeyDown(_ event: NSEvent) {
         if event.keyCode == Constants.Hotkey.escapeKeyCode {
             onCancel?()
         }
     }
 
-    fileprivate func handleFlagsChanged(_ event: NSEvent) {
+    private func handleFlagsChanged(_ event: NSEvent) {
         let keyCode = event.keyCode
         guard keyCode == triggerKeyCode else { return }
 
@@ -138,43 +113,4 @@ final class HotkeyService {
             }
         }
     }
-
-    fileprivate func handleTapDisabled() {
-        guard let tap = eventTap else { return }
-        CGEvent.tapEnable(tap: tap, enable: true)
-        print("[HotkeyService] Re-enabled event tap after system disabled it")
-    }
-}
-
-private class HotkeyCallbackWrapper {
-    weak var service: HotkeyService?
-    init(service: HotkeyService) { self.service = service }
-}
-
-private func hotkeyCallback(
-    proxy: CGEventTapProxy,
-    type: CGEventType,
-    event: CGEvent,
-    userInfo: UnsafeMutableRawPointer?
-) -> Unmanaged<CGEvent>? {
-    guard let userInfo else { return Unmanaged.passRetained(event) }
-    let wrapper = Unmanaged<HotkeyCallbackWrapper>.fromOpaque(userInfo).takeUnretainedValue()
-
-    switch type {
-    case .tapDisabledByTimeout, .tapDisabledByUserInput:
-        wrapper.service?.handleTapDisabled()
-        return Unmanaged.passRetained(event)
-    default:
-        break
-    }
-
-    if let nsEvent = NSEvent(cgEvent: event) {
-        if type == .keyDown {
-            wrapper.service?.handleKeyDown(nsEvent)
-        } else {
-            wrapper.service?.handleFlagsChanged(nsEvent)
-        }
-    }
-
-    return Unmanaged.passRetained(event)
 }

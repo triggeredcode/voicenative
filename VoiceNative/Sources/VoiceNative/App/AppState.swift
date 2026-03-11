@@ -63,6 +63,7 @@ final class AppState {
     private var audioDeviceObserver: NSObjectProtocol?
     private var wakeObserver: NSObjectProtocol?
     private var settingsWindow: NSWindow?
+    private var sourceApp: NSRunningApplication?
 
     // Streaming pipeline state
     private var pipelineChunks: [(text: String, endRawIndex: Int)] = []
@@ -283,6 +284,11 @@ final class AppState {
     func startRecording() {
         guard phase == .ready else { return }
 
+        // Remember which app was frontmost so we can paste back into it
+        sourceApp = NSWorkspace.shared.frontmostApplication
+        // Sync hotkey toggle so next Right Shift is a STOP, not a redundant START
+        hotkey.markToggleActive()
+
         vad.reset()
         vad.resetCalibration()
         vad.autoStopEnabled = triggerMode == .holdToTalk
@@ -494,7 +500,7 @@ final class AppState {
             print("[AppState] Final pipeline: \(String(format: "%.2f", pipelineTime))s for \(String(format: "%.1f", audioDuration))s audio (after-stop only)")
 
             lastTranscription = text
-            injection.inject(text, autoPaste: autoPaste)
+            injection.inject(text, autoPaste: autoPaste, targetApp: sourceApp)
             saveTranscription(text: text, audioDuration: audioDuration)
 
             phase = .ready

@@ -3,25 +3,19 @@ import Carbon.HIToolbox
 
 @MainActor
 final class TextInjectionService {
-    func inject(_ text: String, autoPaste: Bool) {
-        let pasteboard = NSPasteboard.general
-
-        let previousString = pasteboard.string(forType: .string)
-        let previousChangeCount = pasteboard.changeCount
-
+    func inject(_ text: String, autoPaste: Bool, targetApp: NSRunningApplication? = nil) {
         copyToClipboard(text)
 
-        if autoPaste {
-            simulatePaste()
+        guard autoPaste else { return }
 
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(300))
-                guard pasteboard.changeCount == previousChangeCount + 1 else { return }
-                if let previous = previousString {
-                    pasteboard.clearContents()
-                    pasteboard.setString(previous, forType: .string)
-                }
-            }
+        if let app = targetApp, app.bundleIdentifier != Bundle.main.bundleIdentifier {
+            app.activate()
+            print("[Paste] Activating \(app.localizedName ?? "unknown") before paste")
+        }
+
+        // Give the target app time to come to front, then simulate Cmd+V
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            self.simulatePaste()
         }
     }
 
@@ -34,17 +28,18 @@ final class TextInjectionService {
     private func simulatePaste() {
         let source = CGEventSource(stateID: .hidSystemState)
 
-        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: true)
-        keyDown?.flags = .maskCommand
-
-        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: false)
-        keyUp?.flags = .maskCommand
-
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(50))
-            keyDown?.post(tap: .cghidEventTap)
-            try? await Task.sleep(for: .milliseconds(10))
-            keyUp?.post(tap: .cghidEventTap)
+        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: false) else {
+            print("[Paste] Failed to create CGEvents (Accessibility permission missing?)")
+            return
         }
+
+        keyDown.flags = .maskCommand
+        keyUp.flags = .maskCommand
+
+        keyDown.post(tap: .cghidEventTap)
+        usleep(10_000) // 10ms between down/up
+        keyUp.post(tap: .cghidEventTap)
+        print("[Paste] Simulated Cmd+V")
     }
 }
