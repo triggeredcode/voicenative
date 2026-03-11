@@ -162,8 +162,12 @@ final class AppState {
     }
     
     func startRecording() {
-        guard phase == .ready else { return }
+        guard phase == .ready else {
+            print("[AppState] Cannot start recording, phase is \(phase)")
+            return
+        }
         
+        print("[AppState] Starting recording...")
         vad.resetCalibration()
         
         do {
@@ -173,16 +177,24 @@ final class AppState {
             if soundFeedbackEnabled {
                 SoundFeedback.playStartRecording()
             }
+            print("[AppState] Recording started, phase = \(phase)")
         } catch {
+            print("[AppState] ERROR starting recording: \(error)")
             setError("Failed to start recording: \(error.localizedDescription)")
         }
     }
     
     func stopRecordingAndTranscribe() {
-        guard phase == .listening else { return }
+        guard phase == .listening else {
+            print("[AppState] Cannot stop recording, phase is \(phase)")
+            return
+        }
         
+        print("[AppState] Stopping recording...")
         let audioBuffer = audio.stop()
         let audioDuration = audio.audioDuration
+        
+        print("[AppState] Got \(audioBuffer.count) samples (~\(String(format: "%.1f", audioDuration))s)")
         
         phase = .processing
         hud.show(state: .processing)
@@ -191,24 +203,40 @@ final class AppState {
             SoundFeedback.playStopRecording()
         }
         
+        print("[AppState] Starting transcription task...")
         Task {
             await performTranscription(audioBuffer: audioBuffer, audioDuration: audioDuration)
         }
     }
     
     private func performTranscription(audioBuffer: [Float], audioDuration: TimeInterval) async {
+        print("[AppState] performTranscription called with \(audioBuffer.count) samples")
+        
+        guard audioBuffer.count > 1600 else { // At least 0.1 seconds
+            print("[AppState] Audio too short, skipping transcription")
+            phase = .ready
+            hud.hide()
+            return
+        }
+        
         let dictionary = TechnicalDictionary.allTerms(customStorage: customDictionaryTerms)
+        print("[AppState] Using \(dictionary.count) dictionary terms")
         
         do {
+            print("[AppState] Calling transcription.transcribe()...")
             let text = try await transcription.transcribe(audioBuffer: audioBuffer, dictionary: dictionary)
             
+            print("[AppState] Transcription result: \"\(text.prefix(100))...\" (\(text.count) chars)")
+            
             guard !text.isEmpty else {
+                print("[AppState] Empty transcription result, returning to ready")
                 phase = .ready
                 hud.hide()
                 return
             }
             
             lastTranscription = text
+            print("[AppState] Injecting text (autoPaste=\(autoPaste))...")
             
             injection.inject(text, autoPaste: autoPaste)
             
@@ -216,11 +244,13 @@ final class AppState {
             
             phase = .ready
             hud.show(state: .copied)
+            print("[AppState] Transcription complete, phase = \(phase)")
             
             if soundFeedbackEnabled {
                 SoundFeedback.playCopied()
             }
         } catch {
+            print("[AppState] ERROR in transcription: \(error)")
             setError("Transcription failed: \(error.localizedDescription)")
             hud.hide()
             if soundFeedbackEnabled {

@@ -87,7 +87,17 @@ final class TranscriptionService: @unchecked Sendable {
     
     func transcribe(audioBuffer: [Float], dictionary: [String] = []) async throws -> String {
         guard let whisperKit, isModelLoaded else {
+            print("[TranscriptionService] ERROR: Model not loaded")
             throw TranscriptionError.modelNotLoaded
+        }
+        
+        let sampleCount = audioBuffer.count
+        let durationSeconds = Double(sampleCount) / 16000.0
+        print("[TranscriptionService] Starting transcription: \(sampleCount) samples (~\(String(format: "%.1f", durationSeconds))s of audio)")
+        
+        guard sampleCount > 0 else {
+            print("[TranscriptionService] ERROR: Empty audio buffer")
+            throw TranscriptionError.emptyAudioBuffer
         }
         
         await MainActor.run { isTranscribing = true }
@@ -100,14 +110,24 @@ final class TranscriptionService: @unchecked Sendable {
             let tokens = tokenizer.encode(text: promptText)
             options.promptTokens = tokens.filter { $0 < tokenizer.specialTokens.specialTokenBegin }
             options.usePrefillPrompt = true
+            print("[TranscriptionService] Using \(options.promptTokens?.count ?? 0) prompt tokens")
         }
         
+        print("[TranscriptionService] Calling WhisperKit.transcribe()...")
+        let startTime = Date()
+        
         let results = try await whisperKit.transcribe(audioArray: audioBuffer, decodeOptions: options)
+        
+        let elapsed = Date().timeIntervalSince(startTime)
+        print("[TranscriptionService] Transcription completed in \(String(format: "%.2f", elapsed))s")
+        print("[TranscriptionService] Got \(results.count) result segments")
         
         let transcription = results
             .compactMap { $0.text }
             .joined(separator: " ")
             .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        
+        print("[TranscriptionService] Final text (\(transcription.count) chars): \"\(transcription.prefix(100))...\"")
         
         return transcription
     }
@@ -125,6 +145,7 @@ enum TranscriptionError: LocalizedError {
     case modelNotLoaded
     case transcriptionFailed
     case downloadFailed(String)
+    case emptyAudioBuffer
     
     var errorDescription: String? {
         switch self {
@@ -134,6 +155,8 @@ enum TranscriptionError: LocalizedError {
             return "Transcription failed"
         case .downloadFailed(let reason):
             return "Model download failed: \(reason)"
+        case .emptyAudioBuffer:
+            return "No audio recorded"
         }
     }
 }
