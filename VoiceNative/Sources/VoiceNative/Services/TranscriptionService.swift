@@ -5,6 +5,7 @@ import Observation
 @Observable
 final class TranscriptionService: @unchecked Sendable {
     private var whisperKit: WhisperKit?
+    private var isLoading = false
 
     private(set) var isModelLoaded = false
     private(set) var isTranscribing = false
@@ -15,12 +16,20 @@ final class TranscriptionService: @unchecked Sendable {
     // MARK: - Model Loading
 
     func loadModel(_ model: WhisperModel) async throws {
+        guard !isLoading else {
+            print("[Transcription] loadModel already in progress, skipping")
+            return
+        }
+        isLoading = true
+        defer { isLoading = false }
+
         let cached = isModelCached(model)
+        let loadStart = CFAbsoluteTimeGetCurrent()
 
         await MainActor.run {
             isModelLoaded = false
             loadProgress = 0
-            loadStatus = cached ? "Loading model from cache..." : "Downloading model (~\(model.sizeEstimate))..."
+            loadStatus = cached ? "Loading model..." : "Downloading model (~\(model.sizeEstimate))..."
             currentModel = model.rawValue
         }
 
@@ -28,14 +37,22 @@ final class TranscriptionService: @unchecked Sendable {
 
         let config = WhisperKitConfig(
             model: model.rawValue,
-            verbose: true,
-            logLevel: .info,
-            prewarm: false,
+            computeOptions: ModelComputeOptions(
+                melCompute: .cpuAndGPU,
+                audioEncoderCompute: .cpuAndNeuralEngine,
+                textDecoderCompute: .cpuAndNeuralEngine,
+                prefillCompute: .cpuOnly
+            ),
+            verbose: false,
+            logLevel: .error,
+            prewarm: true,
             load: true,
             download: true
         )
 
         whisperKit = try await WhisperKit(config)
+
+        let loadTime = CFAbsoluteTimeGetCurrent() - loadStart
 
         await MainActor.run {
             isModelLoaded = true
@@ -43,10 +60,9 @@ final class TranscriptionService: @unchecked Sendable {
             loadStatus = "Ready"
         }
 
-        print("[Transcription] Model loaded successfully: \(model.rawValue)")
+        print("[Transcription] Model loaded in \(String(format: "%.2f", loadTime))s (cached: \(cached))")
     }
 
-    /// Ensure model is ready before transcription. Reloads if CoreML evicted it.
     func ensureModelReady(_ model: WhisperModel) async throws {
         guard let wk = whisperKit else {
             try await loadModel(model)
@@ -56,22 +72,21 @@ final class TranscriptionService: @unchecked Sendable {
         let state = wk.modelState
         if state != .loaded {
             print("[Transcription] Model state is \(state), reloading...")
-            await MainActor.run { loadStatus = "Reloading model..." }
+            let t0 = CFAbsoluteTimeGetCurrent()
             try await wk.loadModels()
-            await MainActor.run { loadStatus = "Ready" }
-            print("[Transcription] Model reloaded")
+            print("[Transcription] Model reloaded in \(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - t0))s")
         }
     }
 
-    /// Run a micro-inference on 0.5s of silence to keep CoreML/ANE warm.
-    /// Prevents model eviction after idle periods or wake from sleep.
+    /// Run a micro-inference to keep CoreML/ANE pipeline warm.
     func prewarm() async {
-        guard let whisperKit, isModelLoaded, !isTranscribing else { return }
-        let silence = [Float](repeating: 0, count: 8000) // 0.5s at 16kHz
-        let options = DecodingOptions(task: .transcribe, language: "en", withoutTimestamps: true)
-        print("[Transcription] Prewarm: running micro-inference...")
+        guard let whisperKit, isModelLoaded, !isTranscribing, !isLoading else { return }
+        let silence = [Float](repeating: 0, count: 8000)
+        let options = DecodingOptions(task: .transcribe, language: "en", withoutTimestamps: true, suppressBlank: true)
+        let t0 = CFAbsoluteTimeGetCurrent()
+        print("[Transcription] Prewarm: micro-inference...")
         _ = try? await whisperKit.transcribe(audioArray: silence, decodeOptions: options)
-        print("[Transcription] Prewarm complete")
+        print("[Transcription] Prewarm done (\(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - t0))s)")
     }
 
     // MARK: - Transcription
@@ -95,41 +110,43 @@ final class TranscriptionService: @unchecked Sendable {
         await MainActor.run { isTranscribing = true }
         defer { Task { @MainActor in self.isTranscribing = false } }
 
+        // Use VAD chunking for audio > 30s so chunks are transcribed in parallel
+        let useChunking = sampleCount > 480_000 // > 30s at 16kHz
         var options = DecodingOptions(
             task: .transcribe,
             language: "en",
             temperature: 0.0,
-            temperatureFallbackCount: 0,    // No fallback loops -- single pass
+            temperatureFallbackCount: 0,
             skipSpecialTokens: true,
-            withoutTimestamps: true,         // Skip timestamp prediction entirely
-            clipTimestamps: [0],
+            withoutTimestamps: !useChunking,
+            clipTimestamps: useChunking ? [] : [0],
             suppressBlank: true,
-            concurrentWorkerCount: 4
+            chunkingStrategy: useChunking ? .vad : nil
         )
 
-        // Only inject dictionary for longer audio (>10s) to reduce decoding overhead
+        if useChunking {
+            print("[Transcription] VAD chunking enabled for \(String(format: "%.0f", audioDuration))s audio (parallel decode)")
+        }
+
         if audioDuration > 10.0, !dictionary.isEmpty, let tokenizer = whisperKit.tokenizer {
             let termsToUse = Array(dictionary.prefix(15))
             let promptText = "Technical instruction: " + termsToUse.joined(separator: ", ")
             let tokens = tokenizer.encode(text: " " + promptText)
             options.promptTokens = tokens.filter { $0 < tokenizer.specialTokens.specialTokenBegin }
             options.usePrefillPrompt = true
-            print("[Transcription] Using \(options.promptTokens?.count ?? 0) prompt tokens (audio > 10s)")
         } else if let tokenizer = whisperKit.tokenizer {
-            let promptText = "Technical instruction:"
-            let tokens = tokenizer.encode(text: " " + promptText)
+            let tokens = tokenizer.encode(text: " Technical instruction:")
             options.promptTokens = tokens.filter { $0 < tokenizer.specialTokens.specialTokenBegin }
             options.usePrefillPrompt = true
         }
 
-        let timeoutSeconds = max(30.0, audioDuration * 3.0)
-        print("[Transcription] Timeout: \(String(format: "%.0f", timeoutSeconds))s")
+        let timeoutSeconds = max(30.0, audioDuration * 2.0)
 
         let transcriptionTask = Task {
             try await whisperKit.transcribe(audioArray: audioBuffer, decodeOptions: options)
         }
 
-        let startTime = Date()
+        let startTime = CFAbsoluteTimeGetCurrent()
 
         let results: [TranscriptionResult]
         do {
@@ -142,8 +159,9 @@ final class TranscriptionService: @unchecked Sendable {
             throw TranscriptionError.timeout
         }
 
-        let elapsed = Date().timeIntervalSince(startTime)
-        print("[Transcription] Completed in \(String(format: "%.2f", elapsed))s, \(results.count) segments")
+        let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+        let rtf = elapsed / audioDuration
+        print("[Transcription] Done in \(String(format: "%.2f", elapsed))s (\(results.count) segments, RTF=\(String(format: "%.3f", rtf)))")
 
         let rawText = results
             .compactMap { $0.text }
@@ -151,24 +169,19 @@ final class TranscriptionService: @unchecked Sendable {
             .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
 
         let filteredText = filterHallucinations(rawText)
-        print("[Transcription] Final (\(filteredText.count) chars): \"\(filteredText.prefix(100))\"")
+        print("[Transcription] Result (\(filteredText.count) chars): \"\(filteredText.prefix(200))\"")
 
         return filteredText
     }
 
     /// Check if model files exist in WhisperKit's default download location.
-    /// WhisperKit stores models at ~/Documents/huggingface/models/argmaxinc/whisperkit-coreml/
     private func isModelCached(_ model: WhisperModel) -> Bool {
         let fm = FileManager.default
         let home = fm.homeDirectoryForCurrentUser
         let modelDir = home
             .appendingPathComponent("Documents/huggingface/models/argmaxinc/whisperkit-coreml")
             .appendingPathComponent(model.rawValue)
-        let exists = fm.fileExists(atPath: modelDir.path)
-        if exists {
-            print("[Transcription] Model cache found: \(modelDir.path)")
-        }
-        return exists
+        return fm.fileExists(atPath: modelDir.path)
     }
 
     func unloadModel() {

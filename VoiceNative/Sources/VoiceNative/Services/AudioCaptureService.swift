@@ -1,4 +1,5 @@
 @preconcurrency import AVFoundation
+import Accelerate
 import Observation
 
 @Observable
@@ -76,6 +77,7 @@ final class AudioCaptureService: @unchecked Sendable {
     /// Stop recording and return 16kHz mono Float32 samples ready for WhisperKit.
     func stop() -> [Float] {
         guard isRecording else { return [] }
+        let t0 = CFAbsoluteTimeGetCurrent()
 
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
@@ -93,18 +95,21 @@ final class AudioCaptureService: @unchecked Sendable {
         bufferLock.unlock()
 
         let rawDuration = Double(rawSamples.count) / nativeSampleRate
-        print("[AudioCapture] Stopped: \(rawSamples.count) raw samples (~\(String(format: "%.1f", rawDuration))s @ \(Int(nativeSampleRate))Hz)")
+        print("[AudioCapture] Stopped: \(rawSamples.count) raw samples (~\(String(format: "%.1f", rawDuration))s)")
 
+        let t1 = CFAbsoluteTimeGetCurrent()
         let resampled: [Float]
         if nativeSampleRate == Constants.Audio.targetSampleRate {
             resampled = rawSamples
         } else {
             resampled = convertToTargetRate(rawSamples)
-            let convertedDuration = Double(resampled.count) / Constants.Audio.targetSampleRate
-            print("[AudioCapture] Converted: \(resampled.count) samples (~\(String(format: "%.1f", convertedDuration))s @ 16kHz)")
         }
+        let t2 = CFAbsoluteTimeGetCurrent()
 
         let normalized = normalizeAudio(resampled)
+        let t3 = CFAbsoluteTimeGetCurrent()
+
+        print("[AudioCapture] Processing: resample=\(String(format: "%.3f", t2-t1))s, normalize=\(String(format: "%.3f", t3-t2))s, total=\(String(format: "%.3f", t3-t0))s -> \(normalized.count) samples")
         return normalized
     }
 
@@ -123,27 +128,24 @@ final class AudioCaptureService: @unchecked Sendable {
         return 0
     }
 
-    // MARK: - Audio Processing
+    // MARK: - Audio Processing (Accelerate/vDSP)
 
-    /// Peak-normalize audio so the loudest sample reaches 0.95.
-    /// Caps gain at 20x to avoid amplifying pure noise into hallucinations.
+    /// Peak-normalize using vDSP for SIMD speed. Target peak 0.95, max gain 20x.
     private func normalizeAudio(_ samples: [Float]) -> [Float] {
         guard !samples.isEmpty else { return samples }
 
-        var maxSample: Float = 0
-        for s in samples {
-            let a = abs(s)
-            if a > maxSample { maxSample = a }
-        }
+        var peak: Float = 0
+        vDSP_maxmgv(samples, 1, &peak, vDSP_Length(samples.count))
 
-        guard maxSample > 0 else { return samples }
+        guard peak > 0 else { return samples }
 
-        let scale = min(0.95 / maxSample, 20.0)
-
+        var scale = min(0.95 / peak, 20.0)
         if scale > 0.99 && scale < 1.01 { return samples }
 
-        print("[AudioCapture] Normalizing: peak=\(String(format: "%.4f", maxSample)), gain=\(String(format: "%.1f", scale))x")
-        return samples.map { $0 * scale }
+        print("[AudioCapture] Normalizing: peak=\(String(format: "%.4f", peak)), gain=\(String(format: "%.1f", scale))x")
+        var result = [Float](repeating: 0, count: samples.count)
+        vDSP_vsmul(samples, 1, &scale, &result, 1, vDSP_Length(samples.count))
+        return result
     }
 
     // MARK: - Resampling

@@ -29,6 +29,8 @@ final class AppState {
     var iconFeedback: IconFeedback = .none
     var recordingElapsed: TimeInterval = 0
 
+    private var isInitialized = false
+
     let audio = AudioCaptureService()
     let transcription = TranscriptionService()
     let hotkey = HotkeyService()
@@ -104,12 +106,14 @@ final class AppState {
     }
 
     func initialize() async {
+        guard !isInitialized else { return }
+        isInitialized = true
+
         permissions.checkAllPermissions()
         configureServices()
         registerAudioDeviceObserver()
         registerWakeObserver()
         await loadModel()
-        // Prewarm immediately so first transcription is fast
         await transcription.prewarm()
         startKeepaliveTimer()
     }
@@ -298,6 +302,8 @@ final class AppState {
     // MARK: - Transcription
 
     private func performTranscription(audioBuffer: [Float], audioDuration: TimeInterval) async {
+        let pipelineStart = CFAbsoluteTimeGetCurrent()
+
         let minDuration = Constants.Recording.minimumDurationForTranscription
         guard audioDuration >= minDuration else {
             print("[AppState] Audio too short (\(String(format: "%.1f", audioDuration))s < \(minDuration)s)")
@@ -306,7 +312,6 @@ final class AppState {
             return
         }
 
-        // Ensure model is still loaded (may have been evicted)
         do {
             try await transcription.ensureModelReady(selectedModel)
         } catch {
@@ -331,6 +336,9 @@ final class AppState {
                 return
             }
 
+            let pipelineTime = CFAbsoluteTimeGetCurrent() - pipelineStart
+            print("[AppState] Full pipeline: \(String(format: "%.2f", pipelineTime))s for \(String(format: "%.1f", audioDuration))s audio")
+
             lastTranscription = text
             injection.inject(text, autoPaste: autoPaste)
             saveTranscription(text: text, audioDuration: audioDuration)
@@ -340,7 +348,6 @@ final class AppState {
             if soundFeedbackEnabled { SoundFeedback.playCopied() }
         } catch {
             audio.reset()
-            // Retry once after model reload
             if case TranscriptionError.modelNotLoaded = error {
                 print("[AppState] Model not loaded, attempting reload and retry...")
                 do {
