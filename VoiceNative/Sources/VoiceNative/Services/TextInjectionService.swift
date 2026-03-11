@@ -1,11 +1,11 @@
 import AppKit
 import Carbon.HIToolbox
 
+@MainActor
 final class TextInjectionService {
     func inject(_ text: String, autoPaste: Bool) {
         let pasteboard = NSPasteboard.general
 
-        // Preserve existing clipboard contents
         let previousString = pasteboard.string(forType: .string)
         let previousChangeCount = pasteboard.changeCount
 
@@ -14,9 +14,8 @@ final class TextInjectionService {
         if autoPaste {
             simulatePaste()
 
-            // Restore previous clipboard after paste has time to complete
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                // Only restore if clipboard hasn't been changed by something else
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(300))
                 guard pasteboard.changeCount == previousChangeCount + 1 else { return }
                 if let previous = previousString {
                     pasteboard.clearContents()
@@ -26,7 +25,7 @@ final class TextInjectionService {
         }
     }
 
-    func copyToClipboard(_ text: String) {
+    nonisolated func copyToClipboard(_ text: String) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
@@ -41,12 +40,11 @@ final class TextInjectionService {
         let keyUp = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: false)
         keyUp?.flags = .maskCommand
 
-        // 50ms delay to ensure clipboard is ready (Electron apps need this)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(50))
             keyDown?.post(tap: .cghidEventTap)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
-                keyUp?.post(tap: .cghidEventTap)
-            }
+            try? await Task.sleep(for: .milliseconds(10))
+            keyUp?.post(tap: .cghidEventTap)
         }
     }
 }

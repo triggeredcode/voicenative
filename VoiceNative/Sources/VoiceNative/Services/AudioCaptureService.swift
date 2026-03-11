@@ -158,7 +158,7 @@ final class AudioCaptureService: @unchecked Sendable {
             return input
         }
 
-        var inputConsumed = false
+        nonisolated(unsafe) var inputConsumed = false
         var convError: NSError?
         converter.convert(to: outputBuffer, error: &convError) { _, outStatus in
             if inputConsumed {
