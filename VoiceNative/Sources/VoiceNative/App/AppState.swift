@@ -108,17 +108,25 @@ final class AppState {
     // MARK: - Settings Window
 
     func showSettings() {
-        if #available(macOS 14.0, *) {
-            NSApp.activate()
-        } else {
-            NSApp.activate(ignoringOtherApps: true)
-        }
+        print("[Settings] showSettings() called")
 
-        if let window = settingsWindow, window.isVisible {
+        // Delay to let MenuBarExtra panel dismiss before creating a new window
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            guard let self else { return }
+            self.showSettingsWindow()
+        }
+    }
+
+    private func showSettingsWindow() {
+        NSApp.activate(ignoringOtherApps: true)
+
+        if let window = settingsWindow {
+            print("[Settings] Existing window found, visible=\(window.isVisible)")
             window.makeKeyAndOrderFront(nil)
             return
         }
 
+        print("[Settings] Creating new NSWindow")
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 500, height: 380),
             styleMask: [.titled, .closable],
@@ -128,10 +136,13 @@ final class AppState {
         window.title = "VoiceNative Settings"
         window.contentView = NSHostingView(rootView: SettingsView().environment(self))
         window.isReleasedWhenClosed = false
+        window.level = .floating
         window.center()
         window.makeKeyAndOrderFront(nil)
+        window.level = .normal
 
         settingsWindow = window
+        print("[Settings] Window shown, visible=\(window.isVisible), frame=\(window.frame)")
     }
 
     // MARK: - Lifecycle
