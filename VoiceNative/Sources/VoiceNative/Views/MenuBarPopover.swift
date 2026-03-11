@@ -5,71 +5,55 @@ struct MenuBarPopover: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            headerSection
-            Divider()
-            statusSection
-            recordButton
+        VStack(spacing: 10) {
+            topBar
+            actionArea
             if !appState.lastTranscription.isEmpty {
-                Divider()
-                lastTranscriptionSection
+                bottomBar
             }
-            Divider()
-            footerSection
         }
-        .padding()
-        .frame(width: 300)
+        .padding(12)
+        .frame(width: 180)
     }
 
-    private var headerSection: some View {
-        HStack {
-            Text("VoiceNative")
-                .font(.headline)
-            Spacer()
-            Button {
-                appState.showSettings()
-            } label: {
-                Image(systemName: "gear")
-                    .font(.body)
-            }
-            .buttonStyle(.borderless)
-        }
-    }
+    // MARK: - Top: status dot + optional timer + settings/quit icons
 
-    private var statusSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 8, height: 8)
-                Text(appState.statusText)
-                    .font(.subheadline)
+    private var topBar: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(statusColor)
+                .frame(width: 8, height: 8)
+
+            if appState.phase == .listening {
+                Text(formattedElapsed)
+                    .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(.secondary)
-                    .monospacedDigit()
             }
 
-            if appState.phase == .modelLoading {
-                ProgressView(value: appState.modelLoadProgress)
-                    .progressViewStyle(.linear)
-                Text(appState.transcription.loadStatus)
+            Spacer()
+
+            Button { appState.showSettings() } label: {
+                Image(systemName: "gear")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                appState.shutdown()
+                NSApplication.shared.terminate(nil)
+            } label: {
+                Image(systemName: "power")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
-
-            if appState.phase == .error {
-                Button("Retry") {
-                    appState.retryModelLoad()
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-            }
-
-            if appState.phase == .ready {
-                Text("Right Shift to record \u{2022} Esc to cancel")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
+            .buttonStyle(.plain)
         }
+    }
+
+    private var formattedElapsed: String {
+        let elapsed = Int(appState.recordingElapsed)
+        return String(format: "%d:%02d", elapsed / 60, elapsed % 60)
     }
 
     private var statusColor: Color {
@@ -82,87 +66,95 @@ struct MenuBarPopover: View {
         }
     }
 
+    // MARK: - Center: primary action
+
     @ViewBuilder
-    private var recordButton: some View {
-        if appState.phase == .ready || appState.phase == .listening {
-            HStack(spacing: 8) {
-                Button {
-                    appState.toggleRecording()
-                } label: {
-                    HStack {
-                        Image(systemName: appState.phase == .listening ? "stop.fill" : "mic.fill")
-                        Text(appState.phase == .listening ? "Stop Recording" : "Start Recording")
-                    }
+    private var actionArea: some View {
+        switch appState.phase {
+        case .ready:
+            Button { appState.toggleRecording() } label: {
+                Image(systemName: "mic.fill")
+                    .font(.title2)
                     .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(appState.phase == .listening ? .red : .accentColor)
-                .controlSize(.large)
-
-                if appState.phase == .listening {
-                    Button {
-                        appState.cancelRecording()
-                    } label: {
-                        Image(systemName: "xmark")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    .help("Cancel recording (Esc)")
-                }
+                    .frame(height: 38)
+                    .background(.blue.opacity(0.1))
+                    .cornerRadius(8)
             }
-        }
-    }
+            .buttonStyle(.plain)
 
-    private var lastTranscriptionSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Last Transcription")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-
-            HStack(alignment: .top) {
-                Text(appState.lastTranscription)
-                    .font(.callout)
-                    .lineLimit(3)
-                    .truncationMode(.tail)
-
-                Spacer()
-
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(appState.lastTranscription, forType: .string)
-                } label: {
-                    Image(systemName: "doc.on.doc")
+        case .listening:
+            HStack(spacing: 6) {
+                Button { appState.toggleRecording() } label: {
+                    Image(systemName: "stop.fill")
+                        .font(.title2)
+                        .foregroundStyle(.red)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 38)
+                        .background(.red.opacity(0.1))
+                        .cornerRadius(8)
                 }
                 .buttonStyle(.plain)
-                .help("Copy to clipboard")
+
+                Button { appState.cancelRecording() } label: {
+                    Image(systemName: "xmark")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 38, height: 38)
+                        .background(.quaternary.opacity(0.3))
+                        .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
             }
+
+        case .processing, .modelLoading:
+            ProgressView()
+                .controlSize(.small)
+                .frame(maxWidth: .infinity)
+                .frame(height: 38)
+
+        case .error:
+            Button { appState.retryModelLoad() } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.body)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 38)
+                    .background(.orange.opacity(0.1))
+                    .cornerRadius(8)
+            }
+            .buttonStyle(.plain)
+
+        case .idle:
+            EmptyView()
         }
     }
 
-    private var footerSection: some View {
+    // MARK: - Bottom: copy + history icons
+
+    private var bottomBar: some View {
         HStack {
-            Button("History") {
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(appState.lastTranscription, forType: .string)
+            } label: {
+                Image(systemName: "doc.on.doc")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Copy last transcription")
+
+            Spacer()
+
+            Button {
                 NSApp.activate(ignoringOtherApps: true)
                 openWindow(id: "history")
+            } label: {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-
-            Spacer()
-
-            Button("Settings") {
-                appState.showSettings()
-            }
-            .buttonStyle(.plain)
-
-            Spacer()
-
-            Button("Quit") {
-                appState.shutdown()
-                NSApplication.shared.terminate(nil)
-            }
-            .buttonStyle(.plain)
+            .help("History")
         }
-        .font(.caption)
-        .foregroundStyle(.secondary)
     }
 }

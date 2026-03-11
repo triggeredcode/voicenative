@@ -6,22 +6,22 @@ enum SoundFeedback {
     }
 
     static func playStopRecording() {
-        NSSound(named: .init("Pop"))?.play()
+        // Silent -- the transition to processing is visual feedback enough
     }
 
     static func playCopied() {
-        NSSound(named: .init("Glass"))?.play()
+        NSSound(named: .init("Submarine"))?.play()
     }
 
     static func playError() {
-        NSSound(named: .init("Basso"))?.play()
+        NSSound(named: .init("Purr"))?.play()
     }
 
     static func playCancelled() {
-        NSSound(named: .init("Funk"))?.play()
+        // Silent -- icon X feedback only
     }
 
     static func playNoSpeech() {
-        NSSound(named: .init("Purr"))?.play()
+        // Silent -- icon feedback only
     }
 }
