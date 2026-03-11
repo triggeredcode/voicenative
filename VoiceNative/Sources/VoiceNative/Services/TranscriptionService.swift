@@ -136,7 +136,7 @@ final class TranscriptionService: @unchecked Sendable {
         defer { isTranscribing = false }
 
         let useChunking = sampleCount > 480_000
-        var options = DecodingOptions(
+        let options = DecodingOptions(
             task: .transcribe,
             language: "en",
             temperature: 0.0,
@@ -146,14 +146,6 @@ final class TranscriptionService: @unchecked Sendable {
             suppressBlank: true,
             chunkingStrategy: useChunking ? .vad : nil
         )
-
-        // Lightweight technical prompt -- biases decoder toward code/engineering terms
-        if let tokenizer = whisperKit.tokenizer {
-            let prompt = "Technical software engineering dictation."
-            let tokens = tokenizer.encode(text: " " + prompt)
-            options.promptTokens = tokens.filter { $0 < tokenizer.specialTokens.specialTokenBegin }
-            options.usePrefillPrompt = true
-        }
 
         if useChunking {
             print("[Transcription] VAD chunking enabled for \(String(format: "%.0f", audioDuration))s audio")
@@ -206,7 +198,7 @@ final class TranscriptionService: @unchecked Sendable {
         }
         guard !audioBuffer.isEmpty else { return "" }
 
-        var options = DecodingOptions(
+        let options = DecodingOptions(
             task: .transcribe,
             language: "en",
             temperature: 0.0,
@@ -215,13 +207,6 @@ final class TranscriptionService: @unchecked Sendable {
             withoutTimestamps: true,
             suppressBlank: true
         )
-
-        if let tokenizer = whisperKit.tokenizer {
-            let prompt = "Technical software engineering dictation."
-            let tokens = tokenizer.encode(text: " " + prompt)
-            options.promptTokens = tokens.filter { $0 < tokenizer.specialTokens.specialTokenBegin }
-            options.usePrefillPrompt = true
-        }
 
         let results = try await whisperKit.transcribe(audioArray: audioBuffer, decodeOptions: options)
         return results.compactMap(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
