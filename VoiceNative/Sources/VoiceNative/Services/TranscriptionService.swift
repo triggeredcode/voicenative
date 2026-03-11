@@ -156,44 +156,19 @@ final class TranscriptionService: @unchecked Sendable {
         return filteredText
     }
 
-    /// Check if model files exist in any of WhisperKit's known cache locations.
+    /// Check if model files exist in WhisperKit's default download location.
+    /// WhisperKit stores models at ~/Documents/huggingface/models/argmaxinc/whisperkit-coreml/
     private func isModelCached(_ model: WhisperModel) -> Bool {
         let fm = FileManager.default
         let home = fm.homeDirectoryForCurrentUser
-
-        // WhisperKit may cache in multiple locations depending on how it's invoked
-        let possibleBases = [
-            home.appendingPathComponent(".cache/huggingface/hub/models--argmaxinc--whisperkit-coreml/snapshots"),
-            home.appendingPathComponent("Library/Caches/com.apple.nsurlsessiond/huggingface/models--argmaxinc--whisperkit-coreml/snapshots"),
-        ]
-
-        for base in possibleBases {
-            guard let snapshots = try? fm.contentsOfDirectory(at: base, includingPropertiesForKeys: nil) else {
-                continue
-            }
-            for snapshot in snapshots {
-                let modelDir = snapshot.appendingPathComponent(model.rawValue)
-                if fm.fileExists(atPath: modelDir.path) {
-                    return true
-                }
-            }
+        let modelDir = home
+            .appendingPathComponent("Documents/huggingface/models/argmaxinc/whisperkit-coreml")
+            .appendingPathComponent(model.rawValue)
+        let exists = fm.fileExists(atPath: modelDir.path)
+        if exists {
+            print("[Transcription] Model cache found: \(modelDir.path)")
         }
-
-        // Also check if WhisperKit stored it under its default compiled path
-        let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-        if let appSupport {
-            let wkPath = appSupport.appendingPathComponent("huggingface/models--argmaxinc--whisperkit-coreml/snapshots")
-            if let snapshots = try? fm.contentsOfDirectory(at: wkPath, includingPropertiesForKeys: nil) {
-                for snapshot in snapshots {
-                    let modelDir = snapshot.appendingPathComponent(model.rawValue)
-                    if fm.fileExists(atPath: modelDir.path) {
-                        return true
-                    }
-                }
-            }
-        }
-
-        return false
+        return exists
     }
 
     func unloadModel() {
