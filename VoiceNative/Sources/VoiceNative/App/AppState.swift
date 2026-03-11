@@ -58,6 +58,7 @@ final class AppState {
     private var feedbackTimer: Task<Void, Never>?
     private var keepaliveTimer: Task<Void, Never>?
     private var audioDeviceObserver: NSObjectProtocol?
+    private var wakeObserver: NSObjectProtocol?
 
     // MARK: - Computed Properties
 
@@ -106,7 +107,10 @@ final class AppState {
         permissions.checkAllPermissions()
         configureServices()
         registerAudioDeviceObserver()
+        registerWakeObserver()
         await loadModel()
+        // Prewarm immediately so first transcription is fast
+        await transcription.prewarm()
         startKeepaliveTimer()
     }
 
@@ -121,6 +125,9 @@ final class AppState {
         hotkey.stopListening()
         if let obs = audioDeviceObserver {
             NotificationCenter.default.removeObserver(obs)
+        }
+        if let obs = wakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(obs)
         }
     }
 
@@ -183,13 +190,9 @@ final class AppState {
         keepaliveTimer?.cancel()
         keepaliveTimer = Task {
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(60))
+                try? await Task.sleep(for: .seconds(120))
                 guard !Task.isCancelled, phase == .ready else { continue }
-                do {
-                    try await transcription.ensureModelReady(selectedModel)
-                } catch {
-                    print("[AppState] Keepalive model check failed: \(error)")
-                }
+                await transcription.prewarm()
             }
         }
     }
@@ -402,6 +405,22 @@ final class AppState {
 
     func retryModelLoad() {
         Task { await loadModel() }
+    }
+
+    // MARK: - Wake from Sleep
+
+    private func registerWakeObserver() {
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.phase == .ready else { return }
+                print("[AppState] Woke from sleep, prewarming model...")
+                await self.transcription.prewarm()
+            }
+        }
     }
 
     // MARK: - Audio Device Change

@@ -63,6 +63,17 @@ final class TranscriptionService: @unchecked Sendable {
         }
     }
 
+    /// Run a micro-inference on 0.5s of silence to keep CoreML/ANE warm.
+    /// Prevents model eviction after idle periods or wake from sleep.
+    func prewarm() async {
+        guard let whisperKit, isModelLoaded, !isTranscribing else { return }
+        let silence = [Float](repeating: 0, count: 8000) // 0.5s at 16kHz
+        let options = DecodingOptions(task: .transcribe, language: "en", withoutTimestamps: true)
+        print("[Transcription] Prewarm: running micro-inference...")
+        _ = try? await whisperKit.transcribe(audioArray: silence, decodeOptions: options)
+        print("[Transcription] Prewarm complete")
+    }
+
     // MARK: - Transcription
 
     func transcribe(
