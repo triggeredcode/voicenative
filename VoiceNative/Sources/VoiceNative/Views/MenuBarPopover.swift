@@ -26,7 +26,10 @@ struct MenuBarPopover: View {
             Text("VoiceNative")
                 .font(.headline)
             Spacer()
-            SettingsLink {
+            Button {
+                NSApp.activate(ignoringOtherApps: true)
+                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            } label: {
                 Image(systemName: "gear")
                     .foregroundStyle(.secondary)
             }
