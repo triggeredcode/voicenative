@@ -5,133 +5,138 @@ import Observation
 @Observable
 final class TranscriptionService: @unchecked Sendable {
     private var whisperKit: WhisperKit?
-    
+
     private(set) var isModelLoaded = false
     private(set) var isTranscribing = false
     private(set) var loadProgress: Double = 0
     private(set) var loadStatus: String = ""
     private(set) var currentModel: String = ""
-    
-    func loadModel(_ model: WhisperModel, modelManager: ModelManager) async throws {
-        await MainActor.run {
-            isModelLoaded = false
-            loadProgress = 0
-            loadStatus = "Checking model..."
-            currentModel = model.rawValue
-        }
-        
-        let modelFolder: URL
-        if let existingFolder = await modelManager.modelFolderPath(for: model) {
-            modelFolder = existingFolder
-            await MainActor.run {
-                loadStatus = "Model found locally"
-                loadProgress = 0.1
-            }
-        } else {
-            await MainActor.run {
-                loadStatus = "Downloading model..."
-            }
-            modelFolder = try await modelManager.downloadModel(model)
-            await MainActor.run {
-                loadProgress = 0.5
-            }
-        }
-        
-        await MainActor.run {
-            loadStatus = "Loading model into memory..."
-            loadProgress = 0.6
-        }
-        
-        let config = WhisperKitConfig(
-            modelFolder: modelFolder.path,
-            verbose: false,
-            logLevel: .error,
-            prewarm: true,
-            load: true
-        )
-        
-        whisperKit = try await WhisperKit(config)
-        
-        await MainActor.run {
-            isModelLoaded = true
-            loadProgress = 1.0
-            loadStatus = "Ready"
-        }
-    }
-    
-    func loadModelDirect(_ modelName: String) async throws {
+
+    // MARK: - Model Loading
+
+    func loadModel(_ model: WhisperModel) async throws {
         await MainActor.run {
             isModelLoaded = false
             loadProgress = 0
             loadStatus = "Downloading and loading model..."
-            currentModel = modelName
+            currentModel = model.rawValue
         }
-        
+
+        print("[Transcription] Loading model: \(model.rawValue)")
+
         let config = WhisperKitConfig(
-            model: modelName,
+            model: model.rawValue,
             verbose: true,
             logLevel: .info,
-            prewarm: true,
+            prewarm: false,
             load: true,
             download: true
         )
-        
+
         whisperKit = try await WhisperKit(config)
-        
+
         await MainActor.run {
             isModelLoaded = true
             loadProgress = 1.0
             loadStatus = "Ready"
         }
+
+        print("[Transcription] Model loaded successfully: \(model.rawValue)")
     }
-    
-    func transcribe(audioBuffer: [Float], dictionary: [String] = []) async throws -> String {
+
+    /// Ensure model is ready before transcription. Reloads if CoreML evicted it.
+    func ensureModelReady(_ model: WhisperModel) async throws {
+        guard let wk = whisperKit else {
+            try await loadModel(model)
+            return
+        }
+
+        let state = wk.modelState
+        if state != .loaded {
+            print("[Transcription] Model state is \(state), reloading...")
+            await MainActor.run { loadStatus = "Reloading model..." }
+            try await wk.loadModels()
+            await MainActor.run { loadStatus = "Ready" }
+            print("[Transcription] Model reloaded")
+        }
+    }
+
+    // MARK: - Transcription
+
+    func transcribe(
+        audioBuffer: [Float],
+        audioDuration: TimeInterval,
+        dictionary: [String] = []
+    ) async throws -> String {
         guard let whisperKit, isModelLoaded else {
-            print("[TranscriptionService] ERROR: Model not loaded")
             throw TranscriptionError.modelNotLoaded
         }
-        
+
         let sampleCount = audioBuffer.count
-        let durationSeconds = Double(sampleCount) / 16000.0
-        print("[TranscriptionService] Starting transcription: \(sampleCount) samples (~\(String(format: "%.1f", durationSeconds))s of audio)")
-        
+        print("[Transcription] Starting: \(sampleCount) samples (~\(String(format: "%.1f", audioDuration))s)")
+
         guard sampleCount > 0 else {
-            print("[TranscriptionService] ERROR: Empty audio buffer")
             throw TranscriptionError.emptyAudioBuffer
         }
-        
+
         await MainActor.run { isTranscribing = true }
         defer { Task { @MainActor in self.isTranscribing = false } }
-        
+
         var options = DecodingOptions(task: .transcribe, language: "en")
-        
-        if !dictionary.isEmpty, let tokenizer = whisperKit.tokenizer {
-            let promptText = " " + dictionary.joined(separator: " ")
-            let tokens = tokenizer.encode(text: promptText)
+
+        // Instructional initial prompt for technical content
+        options.clipTimestamps = [0]
+
+        // Scale dictionary injection by audio duration
+        if audioDuration > 3.0, !dictionary.isEmpty, let tokenizer = whisperKit.tokenizer {
+            let termsToUse = Array(dictionary.prefix(20))
+            let promptText = "Technical instruction: " + termsToUse.joined(separator: ", ")
+            let tokens = tokenizer.encode(text: " " + promptText)
             options.promptTokens = tokens.filter { $0 < tokenizer.specialTokens.specialTokenBegin }
             options.usePrefillPrompt = true
-            print("[TranscriptionService] Using \(options.promptTokens?.count ?? 0) prompt tokens")
+            print("[Transcription] Using \(options.promptTokens?.count ?? 0) prompt tokens (audio > 3s)")
+        } else if let tokenizer = whisperKit.tokenizer {
+            let promptText = "Technical instruction for software engineering:"
+            let tokens = tokenizer.encode(text: " " + promptText)
+            options.promptTokens = tokens.filter { $0 < tokenizer.specialTokens.specialTokenBegin }
+            options.usePrefillPrompt = true
+            print("[Transcription] Using minimal instructional prompt (audio <= 3s or no dictionary)")
         }
-        
-        print("[TranscriptionService] Calling WhisperKit.transcribe()...")
+
+        let timeoutSeconds = max(30.0, audioDuration * 3.0)
+        print("[Transcription] Timeout: \(String(format: "%.0f", timeoutSeconds))s")
+
+        let transcriptionTask = Task {
+            try await whisperKit.transcribe(audioArray: audioBuffer, decodeOptions: options)
+        }
+
         let startTime = Date()
-        
-        let results = try await whisperKit.transcribe(audioArray: audioBuffer, decodeOptions: options)
-        
+
+        let results: [TranscriptionResult]
+        do {
+            results = try await withTimeout(seconds: timeoutSeconds) {
+                try await transcriptionTask.value
+            }
+        } catch is TimeoutError {
+            transcriptionTask.cancel()
+            print("[Transcription] TIMEOUT after \(String(format: "%.1f", timeoutSeconds))s")
+            throw TranscriptionError.timeout
+        }
+
         let elapsed = Date().timeIntervalSince(startTime)
-        print("[TranscriptionService] Transcription completed in \(String(format: "%.2f", elapsed))s")
-        print("[TranscriptionService] Got \(results.count) result segments")
-        
-        let transcription = results
+        print("[Transcription] Completed in \(String(format: "%.2f", elapsed))s, \(results.count) segments")
+
+        let rawText = results
             .compactMap { $0.text }
             .joined(separator: " ")
             .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-        
-        print("[TranscriptionService] Final text (\(transcription.count) chars): \"\(transcription.prefix(100))...\"")
-        
-        return transcription
+
+        let filteredText = filterHallucinations(rawText)
+        print("[Transcription] Final (\(filteredText.count) chars): \"\(filteredText.prefix(100))\"")
+
+        return filteredText
     }
-    
+
     func unloadModel() {
         whisperKit = nil
         isModelLoaded = false
@@ -139,24 +144,103 @@ final class TranscriptionService: @unchecked Sendable {
         loadStatus = ""
         currentModel = ""
     }
+
+    // MARK: - Hallucination Filter
+
+    private static let hallucinationPatterns: [String] = [
+        "thank you for watching",
+        "thanks for watching",
+        "subscribe to my channel",
+        "please like and subscribe",
+        "like and subscribe",
+        "please subscribe",
+        "see you in the next video",
+        "see you next time",
+        "don't forget to subscribe",
+        "hit the bell",
+        "hit the notification",
+        "leave a comment",
+        "share this video",
+        "thanks for listening",
+        "thank you for listening",
+        "goodbye",
+        "bye bye",
+        "you",
+    ]
+
+    private func filterHallucinations(_ text: String) -> String {
+        let lower = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !lower.isEmpty else { return "" }
+
+        for pattern in Self.hallucinationPatterns {
+            if lower == pattern || lower == pattern + "." {
+                print("[Transcription] Filtered hallucination: \"\(text)\"")
+                return ""
+            }
+        }
+
+        // Detect repeated phrases (3+ repetitions)
+        let words = lower.split(separator: " ")
+        if words.count >= 6 {
+            for n in 1...min(5, words.count / 3) {
+                let ngrams = stride(from: 0, to: words.count - n + 1, by: n).map {
+                    words[$0..<min($0 + n, words.count)].joined(separator: " ")
+                }
+                let first = ngrams.first ?? ""
+                if !first.isEmpty && ngrams.allSatisfy({ $0 == first }) && ngrams.count >= 3 {
+                    print("[Transcription] Filtered repeated n-gram: \"\(first)\" x\(ngrams.count)")
+                    return ""
+                }
+            }
+        }
+
+        // Reject non-ASCII-only results for English transcription
+        let asciiCount = text.unicodeScalars.filter { $0.isASCII }.count
+        if asciiCount < text.unicodeScalars.count / 2 {
+            print("[Transcription] Filtered non-ASCII result: \"\(text.prefix(50))\"")
+            return ""
+        }
+
+        return text
+    }
 }
+
+// MARK: - Timeout Helper
+
+private struct TimeoutError: Error {}
+
+private func withTimeout<T: Sendable>(
+    seconds: TimeInterval,
+    operation: @escaping @Sendable () async throws -> T
+) async throws -> T {
+    try await withThrowingTaskGroup(of: T.self) { group in
+        group.addTask { try await operation() }
+        group.addTask {
+            try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            throw TimeoutError()
+        }
+        guard let result = try await group.next() else {
+            throw TimeoutError()
+        }
+        group.cancelAll()
+        return result
+    }
+}
+
+// MARK: - Errors
 
 enum TranscriptionError: LocalizedError {
     case modelNotLoaded
     case transcriptionFailed
-    case downloadFailed(String)
     case emptyAudioBuffer
-    
+    case timeout
+
     var errorDescription: String? {
         switch self {
-        case .modelNotLoaded:
-            return "Whisper model is not loaded"
-        case .transcriptionFailed:
-            return "Transcription failed"
-        case .downloadFailed(let reason):
-            return "Model download failed: \(reason)"
-        case .emptyAudioBuffer:
-            return "No audio recorded"
+        case .modelNotLoaded: return "Whisper model is not loaded"
+        case .transcriptionFailed: return "Transcription failed"
+        case .emptyAudioBuffer: return "No audio recorded"
+        case .timeout: return "Transcription timed out"
         }
     }
 }
