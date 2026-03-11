@@ -5,33 +5,38 @@ import Observation
 @Observable
 final class TranscriptionService: @unchecked Sendable {
     private var whisperKit: WhisperKit?
-    private var isLoading = false
 
     private(set) var isModelLoaded = false
     private(set) var isTranscribing = false
+    private(set) var isLoading = false
     private(set) var loadProgress: Double = 0
     private(set) var loadStatus: String = ""
     private(set) var currentModel: String = ""
 
     // MARK: - Model Loading
 
+    @MainActor
     func loadModel(_ model: WhisperModel) async throws {
         guard !isLoading else {
             print("[Transcription] loadModel already in progress, skipping")
             return
         }
+
+        if isModelLoaded, currentModel == model.rawValue, whisperKit != nil {
+            print("[Transcription] Model \(model.rawValue) already loaded, skipping")
+            return
+        }
+
         isLoading = true
         defer { isLoading = false }
 
         let cached = isModelCached(model)
         let loadStart = CFAbsoluteTimeGetCurrent()
 
-        await MainActor.run {
-            isModelLoaded = false
-            loadProgress = 0
-            loadStatus = cached ? "Loading model..." : "Downloading model (~\(model.sizeEstimate))..."
-            currentModel = model.rawValue
-        }
+        isModelLoaded = false
+        loadProgress = 0
+        loadStatus = cached ? "Loading model..." : "Downloading model (~\(model.sizeEstimate))..."
+        currentModel = model.rawValue
 
         print("[Transcription] Loading model: \(model.rawValue) (cached: \(cached))")
 
@@ -54,28 +59,28 @@ final class TranscriptionService: @unchecked Sendable {
 
         let loadTime = CFAbsoluteTimeGetCurrent() - loadStart
 
-        await MainActor.run {
-            isModelLoaded = true
-            loadProgress = 1.0
-            loadStatus = "Ready"
-        }
+        isModelLoaded = true
+        loadProgress = 1.0
+        loadStatus = "Ready"
 
         print("[Transcription] Model loaded in \(String(format: "%.2f", loadTime))s (cached: \(cached))")
     }
 
     func ensureModelReady(_ model: WhisperModel) async throws {
         guard let wk = whisperKit else {
-            try await loadModel(model)
-            return
+            throw TranscriptionError.modelNotLoaded
         }
 
         let state = wk.modelState
-        if state != .loaded {
-            print("[Transcription] Model state is \(state), reloading...")
-            let t0 = CFAbsoluteTimeGetCurrent()
-            try await wk.loadModels()
-            print("[Transcription] Model reloaded in \(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - t0))s")
+        if state == .loaded || state == .prewarmed {
+            return
         }
+
+        print("[Transcription] Model state is \(state), reloading in-place...")
+        let t0 = CFAbsoluteTimeGetCurrent()
+        try await wk.loadModels()
+        await MainActor.run { self.isModelLoaded = true }
+        print("[Transcription] Model reloaded in \(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - t0))s")
     }
 
     /// Run a micro-inference to keep CoreML/ANE pipeline warm.
@@ -107,8 +112,8 @@ final class TranscriptionService: @unchecked Sendable {
             throw TranscriptionError.emptyAudioBuffer
         }
 
-        await MainActor.run { isTranscribing = true }
-        defer { Task { @MainActor in self.isTranscribing = false } }
+        isTranscribing = true
+        defer { isTranscribing = false }
 
         // Use VAD chunking for audio > 30s so chunks are transcribed in parallel
         let useChunking = sampleCount > 480_000 // > 30s at 16kHz

@@ -29,7 +29,8 @@ final class AppState {
     var iconFeedback: IconFeedback = .none
     var recordingElapsed: TimeInterval = 0
 
-    private var isInitialized = false
+    /// True after first bootstrap -- checked by VoiceNativeApp to avoid re-running setup on popover re-open
+    private(set) var hasBootstrapped = false
 
     let audio = AudioCaptureService()
     let transcription = TranscriptionService()
@@ -106,9 +107,10 @@ final class AppState {
     }
 
     func initialize() async {
-        guard !isInitialized else { return }
-        isInitialized = true
+        guard !hasBootstrapped else { return }
+        hasBootstrapped = true
 
+        print("[AppState] Initializing...")
         permissions.checkAllPermissions()
         configureServices()
         registerAudioDeviceObserver()
@@ -116,6 +118,7 @@ final class AppState {
         await loadModel()
         await transcription.prewarm()
         startKeepaliveTimer()
+        print("[AppState] Initialization complete (phase=\(phase.rawValue))")
     }
 
     func shutdown() {
@@ -170,19 +173,33 @@ final class AppState {
     // MARK: - Model Loading
 
     private func loadModel() async {
+        // Never interrupt recording or processing to load a model
+        guard phase == .idle || phase == .error || phase == .modelLoading else {
+            print("[AppState] loadModel skipped (phase=\(phase.rawValue))")
+            return
+        }
         phase = .modelLoading
         modelLoadProgress = 0
 
         do {
             try await transcription.loadModel(selectedModel)
-            phase = .ready
-            hotkey.startListening()
+            // Only transition to .ready if we're still in .modelLoading (not interrupted)
+            if phase == .modelLoading {
+                phase = .ready
+                hotkey.startListening()
+            }
         } catch {
-            setError("Failed to load model: \(error.localizedDescription)")
+            if phase == .modelLoading {
+                setError("Failed to load model: \(error.localizedDescription)")
+            }
         }
     }
 
     func reloadModel() {
+        guard phase == .ready || phase == .error else {
+            print("[AppState] reloadModel skipped (phase=\(phase.rawValue))")
+            return
+        }
         Task {
             hotkey.stopListening()
             transcription.unloadModel()
@@ -196,11 +213,7 @@ final class AppState {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(120))
                 guard !Task.isCancelled else { continue }
-                // Only prewarm when truly idle -- not recording, not processing, not loading
-                guard phase == .ready, !transcription.isTranscribing else {
-                    print("[AppState] Keepalive skipped (phase=\(phase.rawValue))")
-                    continue
-                }
+                guard phase == .ready else { continue }
                 await transcription.prewarm()
             }
         }
@@ -348,29 +361,7 @@ final class AppState {
             if soundFeedbackEnabled { SoundFeedback.playCopied() }
         } catch {
             audio.reset()
-            if case TranscriptionError.modelNotLoaded = error {
-                print("[AppState] Model not loaded, attempting reload and retry...")
-                do {
-                    try await transcription.loadModel(selectedModel)
-                    let retryText = try await transcription.transcribe(
-                        audioBuffer: audioBuffer,
-                        audioDuration: audioDuration,
-                        dictionary: dictionary
-                    )
-                    if !retryText.isEmpty {
-                        lastTranscription = retryText
-                        injection.inject(retryText, autoPaste: autoPaste)
-                        saveTranscription(text: retryText, audioDuration: audioDuration)
-                        phase = .ready
-                        showIconFeedback(.copied)
-                        if soundFeedbackEnabled { SoundFeedback.playCopied() }
-                        return
-                    }
-                } catch {
-                    print("[AppState] Retry also failed: \(error)")
-                }
-            }
-
+            print("[AppState] Transcription failed: \(error)")
             setError("Transcription failed: \(error.localizedDescription)")
             if soundFeedbackEnabled { SoundFeedback.playError() }
         }
@@ -411,11 +402,17 @@ final class AppState {
     // MARK: - Error
 
     func setError(_ message: String) {
+        // Never clobber active recording/processing with an error
+        guard phase != .listening else {
+            print("[AppState] Suppressed error during recording: \(message)")
+            return
+        }
         errorMessage = message
         phase = .error
     }
 
     func retryModelLoad() {
+        guard phase == .error else { return }
         Task { await loadModel() }
     }
 

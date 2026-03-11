@@ -4,7 +4,6 @@ import SwiftData
 @main
 struct VoiceNativeApp: App {
     @State private var appState = AppState()
-    @State private var showOnboarding = false
 
     private let modelContainer: ModelContainer
 
@@ -21,15 +20,12 @@ struct VoiceNativeApp: App {
             MenuBarPopover()
                 .environment(appState)
                 .modelContainer(modelContainer)
-                .task {
-                    appState.setModelContext(modelContainer.mainContext)
-
-                    appState.permissions.checkAllPermissions()
-                    if !appState.permissions.allPermissionsGranted {
-                        showOnboarding = true
+                .onAppear {
+                    // Only bootstrap once -- onAppear also fires per-open but initialize() guards internally
+                    if !appState.hasBootstrapped {
+                        appState.setModelContext(modelContainer.mainContext)
+                        Task { await appState.initialize() }
                     }
-
-                    await appState.initialize()
                 }
         } label: {
             Image(systemName: appState.menuBarIcon)
