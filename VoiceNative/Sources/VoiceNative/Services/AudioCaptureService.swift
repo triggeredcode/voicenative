@@ -95,14 +95,17 @@ final class AudioCaptureService: @unchecked Sendable {
         let rawDuration = Double(rawSamples.count) / nativeSampleRate
         print("[AudioCapture] Stopped: \(rawSamples.count) raw samples (~\(String(format: "%.1f", rawDuration))s @ \(Int(nativeSampleRate))Hz)")
 
+        let resampled: [Float]
         if nativeSampleRate == Constants.Audio.targetSampleRate {
-            return rawSamples
+            resampled = rawSamples
+        } else {
+            resampled = convertToTargetRate(rawSamples)
+            let convertedDuration = Double(resampled.count) / Constants.Audio.targetSampleRate
+            print("[AudioCapture] Converted: \(resampled.count) samples (~\(String(format: "%.1f", convertedDuration))s @ 16kHz)")
         }
 
-        let converted = convertToTargetRate(rawSamples)
-        let convertedDuration = Double(converted.count) / Constants.Audio.targetSampleRate
-        print("[AudioCapture] Converted: \(converted.count) samples (~\(String(format: "%.1f", convertedDuration))s @ 16kHz)")
-        return converted
+        let normalized = normalizeAudio(resampled)
+        return normalized
     }
 
     func reset() {
@@ -118,6 +121,29 @@ final class AudioCaptureService: @unchecked Sendable {
             return Date().timeIntervalSince(start)
         }
         return 0
+    }
+
+    // MARK: - Audio Processing
+
+    /// Peak-normalize audio so the loudest sample reaches 0.95.
+    /// Caps gain at 20x to avoid amplifying pure noise into hallucinations.
+    private func normalizeAudio(_ samples: [Float]) -> [Float] {
+        guard !samples.isEmpty else { return samples }
+
+        var maxSample: Float = 0
+        for s in samples {
+            let a = abs(s)
+            if a > maxSample { maxSample = a }
+        }
+
+        guard maxSample > 0 else { return samples }
+
+        let scale = min(0.95 / maxSample, 20.0)
+
+        if scale > 0.99 && scale < 1.01 { return samples }
+
+        print("[AudioCapture] Normalizing: peak=\(String(format: "%.4f", maxSample)), gain=\(String(format: "%.1f", scale))x")
+        return samples.map { $0 * scale }
     }
 
     // MARK: - Resampling
