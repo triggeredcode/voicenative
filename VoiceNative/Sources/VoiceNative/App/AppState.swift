@@ -13,284 +13,410 @@ final class AppState {
         case processing = "Processing"
         case error = "Error"
     }
-    
+
+    // Transient icon states shown briefly then auto-reverted
+    enum IconFeedback: Equatable, Sendable {
+        case none
+        case copied
+        case noSpeech
+        case cancelled
+    }
+
     var phase: Phase = .idle
     var lastTranscription: String = ""
     var errorMessage: String?
     var modelLoadProgress: Double = 0
-    
+    var iconFeedback: IconFeedback = .none
+    var recordingElapsed: TimeInterval = 0
+
     let audio = AudioCaptureService()
     let transcription = TranscriptionService()
     let hotkey = HotkeyService()
     let injection = TextInjectionService()
     let vad = VADService()
-    let hud = HUDOverlayController()
     let permissions = PermissionManager()
-    let modelManager = ModelManager()
-    
+
     @ObservationIgnored
     @AppStorage("selectedModel") private var selectedModel = WhisperModel.largev3TurboQuantized
-    
     @ObservationIgnored
     @AppStorage("autoPaste") private var autoPaste = true
-    
     @ObservationIgnored
     @AppStorage("triggerMode") private var triggerMode = TriggerMode.toggle
-    
     @ObservationIgnored
-    @AppStorage("silenceTimeout") private var silenceTimeout = 1.5
-    
+    @AppStorage("silenceTimeout") private var silenceTimeout = 3.0
     @ObservationIgnored
     @AppStorage("vadSensitivity") private var vadSensitivity = VADSensitivity.medium
-    
-    @ObservationIgnored
-    @AppStorage("hudPosition") private var hudPosition = HUDPosition.topCenter
-    
-    @ObservationIgnored
-    @AppStorage("hudOpacity") private var hudOpacity = 0.85
-    
     @ObservationIgnored
     @AppStorage("customDictionaryTerms") private var customDictionaryTerms = ""
-    
     @ObservationIgnored
     @AppStorage("soundFeedback") private var soundFeedbackEnabled = true
-    
+    @ObservationIgnored
+    @AppStorage("maxRecordingDuration") private var maxRecordingDuration = Constants.Recording.defaultMaxDuration
+
     private var modelContext: ModelContext?
-    
+    private var recordingTimer: Task<Void, Never>?
+    private var feedbackTimer: Task<Void, Never>?
+    private var keepaliveTimer: Task<Void, Never>?
+    private var audioDeviceObserver: NSObjectProtocol?
+
+    // MARK: - Computed Properties
+
     var menuBarIcon: String {
+        switch iconFeedback {
+        case .copied: return "checkmark.circle.fill"
+        case .noSpeech: return "mic.slash"
+        case .cancelled: return "xmark.circle"
+        case .none: break
+        }
+
         switch phase {
-        case .idle, .modelLoading:
-            return "mic.slash"
-        case .ready:
-            return "mic"
-        case .listening:
-            return "mic.fill"
-        case .processing:
-            return "ellipsis.circle"
-        case .error:
-            return "exclamationmark.triangle"
+        case .idle, .modelLoading: return "arrow.down.circle"
+        case .ready: return "mic"
+        case .listening: return "mic.fill"
+        case .processing: return "ellipsis.circle"
+        case .error: return "exclamationmark.triangle"
         }
     }
-    
+
+    var isIconAnimating: Bool {
+        iconFeedback == .none && (phase == .listening || phase == .processing || phase == .modelLoading)
+    }
+
     var statusText: String {
         switch phase {
-        case .error:
-            return errorMessage ?? "Unknown error"
-        default:
-            return phase.rawValue
+        case .error: return errorMessage ?? "Unknown error"
+        case .listening:
+            let elapsed = Int(recordingElapsed)
+            let mins = elapsed / 60
+            let secs = elapsed % 60
+            return "Listening \(String(format: "%d:%02d", mins, secs))"
+        default: return phase.rawValue
         }
     }
-    
-    var isRecordingAvailable: Bool {
-        phase == .ready
-    }
-    
+
+    var isRecordingAvailable: Bool { phase == .ready }
+
+    // MARK: - Lifecycle
+
     func setModelContext(_ context: ModelContext) {
         self.modelContext = context
     }
-    
+
     func initialize() async {
         permissions.checkAllPermissions()
-        
         configureServices()
-        
+        registerAudioDeviceObserver()
         await loadModel()
+        startKeepaliveTimer()
     }
-    
+
+    func shutdown() {
+        if phase == .listening {
+            let _ = audio.stop()
+            audio.reset()
+        }
+        recordingTimer?.cancel()
+        feedbackTimer?.cancel()
+        keepaliveTimer?.cancel()
+        hotkey.stopListening()
+        if let obs = audioDeviceObserver {
+            NotificationCenter.default.removeObserver(obs)
+        }
+    }
+
+    // MARK: - Service Configuration
+
     private func configureServices() {
         hotkey.triggerMode = triggerMode
+
         hotkey.onTriggerStart = { [weak self] in
-            Task { @MainActor in
-                self?.handleTriggerStart()
-            }
+            Task { @MainActor in self?.handleTriggerStart() }
         }
         hotkey.onTriggerEnd = { [weak self] in
-            Task { @MainActor in
-                self?.handleTriggerEnd()
-            }
+            Task { @MainActor in self?.handleTriggerEnd() }
         }
-        
+        hotkey.onCancel = { [weak self] in
+            Task { @MainActor in self?.cancelRecording() }
+        }
+
         vad.silenceTimeout = silenceTimeout
         vad.sensitivity = vadSensitivity
         vad.onSilenceDetected = { [weak self] in
-            Task { @MainActor in
-                self?.handleSilenceDetected()
-            }
+            Task { @MainActor in self?.handleSilenceDetected() }
         }
-        
+
         audio.onAudioChunk = { [weak self] samples in
-            Task { @MainActor in
-                self?.vad.processAudioChunk(samples)
-            }
+            Task { @MainActor in self?.vad.processAudioChunk(samples) }
         }
-        
-        hud.position = hudPosition
-        hud.opacity = hudOpacity
     }
-    
+
+    func applySettingsLive() {
+        hotkey.triggerMode = triggerMode
+        vad.silenceTimeout = silenceTimeout
+        vad.sensitivity = vadSensitivity
+    }
+
+    // MARK: - Model Loading
+
     private func loadModel() async {
         phase = .modelLoading
         modelLoadProgress = 0
-        
+
         do {
-            try await transcription.loadModel(selectedModel, modelManager: modelManager)
+            try await transcription.loadModel(selectedModel)
             phase = .ready
             hotkey.startListening()
         } catch {
             setError("Failed to load model: \(error.localizedDescription)")
         }
     }
-    
+
+    func reloadModel() {
+        Task {
+            hotkey.stopListening()
+            transcription.unloadModel()
+            await loadModel()
+        }
+    }
+
+    private func startKeepaliveTimer() {
+        keepaliveTimer?.cancel()
+        keepaliveTimer = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                guard !Task.isCancelled, phase == .ready else { continue }
+                do {
+                    try await transcription.ensureModelReady(selectedModel)
+                } catch {
+                    print("[AppState] Keepalive model check failed: \(error)")
+                }
+            }
+        }
+    }
+
+    // MARK: - Trigger Handling
+
     private func handleTriggerStart() {
         guard phase == .ready else { return }
         startRecording()
     }
-    
+
     private func handleTriggerEnd() {
         guard phase == .listening else { return }
-        if triggerMode == .holdToTalk {
-            stopRecordingAndTranscribe()
-        }
-    }
-    
-    private func handleSilenceDetected() {
-        guard phase == .listening else { return }
-        if triggerMode == .toggle {
-            hotkey.simulateToggleEnd()
-        }
         stopRecordingAndTranscribe()
     }
-    
+
+    private func handleSilenceDetected() {
+        guard phase == .listening else { return }
+        // In toggle mode, VAD doesn't auto-stop
+        guard triggerMode == .holdToTalk else { return }
+        stopRecordingAndTranscribe()
+    }
+
+    // MARK: - Recording
+
     func startRecording() {
-        guard phase == .ready else {
-            print("[AppState] Cannot start recording, phase is \(phase)")
-            return
-        }
-        
-        print("[AppState] Starting recording...")
+        guard phase == .ready else { return }
+
+        vad.reset()
         vad.resetCalibration()
-        
+
+        // In toggle mode, disable VAD auto-stop
+        vad.autoStopEnabled = triggerMode == .holdToTalk
+
         do {
             try audio.start()
             phase = .listening
-            hud.show(state: .listening)
-            if soundFeedbackEnabled {
-                SoundFeedback.playStartRecording()
-            }
-            print("[AppState] Recording started, phase = \(phase)")
+            recordingElapsed = 0
+            if soundFeedbackEnabled { SoundFeedback.playStartRecording() }
+            startRecordingTimer()
         } catch {
-            print("[AppState] ERROR starting recording: \(error)")
             setError("Failed to start recording: \(error.localizedDescription)")
         }
     }
-    
+
     func stopRecordingAndTranscribe() {
-        guard phase == .listening else {
-            print("[AppState] Cannot stop recording, phase is \(phase)")
-            return
-        }
-        
-        print("[AppState] Stopping recording...")
+        guard phase == .listening else { return }
+
+        recordingTimer?.cancel()
         let audioBuffer = audio.stop()
         let audioDuration = audio.audioDuration
-        
-        print("[AppState] Got \(audioBuffer.count) samples (~\(String(format: "%.1f", audioDuration))s)")
-        
+
         phase = .processing
-        hud.show(state: .processing)
-        
-        if soundFeedbackEnabled {
-            SoundFeedback.playStopRecording()
-        }
-        
-        print("[AppState] Starting transcription task...")
-        Task {
-            await performTranscription(audioBuffer: audioBuffer, audioDuration: audioDuration)
+        if soundFeedbackEnabled { SoundFeedback.playStopRecording() }
+
+        Task { await performTranscription(audioBuffer: audioBuffer, audioDuration: audioDuration) }
+    }
+
+    func cancelRecording() {
+        guard phase == .listening else { return }
+
+        recordingTimer?.cancel()
+        let _ = audio.stop()
+        audio.reset()
+        hotkey.resetToggleState()
+
+        phase = .ready
+        if soundFeedbackEnabled { SoundFeedback.playCancelled() }
+        showIconFeedback(.cancelled)
+        print("[AppState] Recording cancelled")
+    }
+
+    func toggleRecording() {
+        switch phase {
+        case .ready: startRecording()
+        case .listening: stopRecordingAndTranscribe()
+        default: break
         }
     }
-    
+
+    private func startRecordingTimer() {
+        recordingTimer?.cancel()
+        recordingTimer = Task {
+            while !Task.isCancelled && phase == .listening {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled, phase == .listening else { break }
+                recordingElapsed = audio.currentRecordingDuration
+
+                if recordingElapsed >= maxRecordingDuration {
+                    print("[AppState] Max recording duration reached (\(Int(maxRecordingDuration))s)")
+                    stopRecordingAndTranscribe()
+                    break
+                }
+            }
+        }
+    }
+
+    // MARK: - Transcription
+
     private func performTranscription(audioBuffer: [Float], audioDuration: TimeInterval) async {
-        print("[AppState] performTranscription called with \(audioBuffer.count) samples")
-        
-        guard audioBuffer.count > 1600 else { // At least 0.1 seconds
-            print("[AppState] Audio too short, skipping transcription")
-            phase = .ready
-            hud.hide()
+        let minDuration = Constants.Recording.minimumDurationForTranscription
+        guard audioDuration >= minDuration else {
+            print("[AppState] Audio too short (\(String(format: "%.1f", audioDuration))s < \(minDuration)s)")
+            showNoSpeechFeedback()
+            audio.reset()
             return
         }
-        
-        let dictionary = TechnicalDictionary.allTerms(customStorage: customDictionaryTerms)
-        print("[AppState] Using \(dictionary.count) dictionary terms")
-        
+
+        // Ensure model is still loaded (may have been evicted)
         do {
-            print("[AppState] Calling transcription.transcribe()...")
-            let text = try await transcription.transcribe(audioBuffer: audioBuffer, dictionary: dictionary)
-            
-            print("[AppState] Transcription result: \"\(text.prefix(100))...\" (\(text.count) chars)")
-            
+            try await transcription.ensureModelReady(selectedModel)
+        } catch {
+            setError("Model unavailable: \(error.localizedDescription)")
+            audio.reset()
+            return
+        }
+
+        let dictionary = TechnicalDictionary.allTerms(customStorage: customDictionaryTerms)
+
+        do {
+            let text = try await transcription.transcribe(
+                audioBuffer: audioBuffer,
+                audioDuration: audioDuration,
+                dictionary: dictionary
+            )
+
+            audio.reset()
+
             guard !text.isEmpty else {
-                print("[AppState] Empty transcription result, returning to ready")
-                phase = .ready
-                hud.hide()
+                showNoSpeechFeedback()
                 return
             }
-            
+
             lastTranscription = text
-            print("[AppState] Injecting text (autoPaste=\(autoPaste))...")
-            
             injection.inject(text, autoPaste: autoPaste)
-            
             saveTranscription(text: text, audioDuration: audioDuration)
-            
+
             phase = .ready
-            hud.show(state: .copied)
-            print("[AppState] Transcription complete, phase = \(phase)")
-            
-            if soundFeedbackEnabled {
-                SoundFeedback.playCopied()
-            }
+            showIconFeedback(.copied)
+            if soundFeedbackEnabled { SoundFeedback.playCopied() }
         } catch {
-            print("[AppState] ERROR in transcription: \(error)")
-            setError("Transcription failed: \(error.localizedDescription)")
-            hud.hide()
-            if soundFeedbackEnabled {
-                SoundFeedback.playError()
+            audio.reset()
+            // Retry once after model reload
+            if case TranscriptionError.modelNotLoaded = error {
+                print("[AppState] Model not loaded, attempting reload and retry...")
+                do {
+                    try await transcription.loadModel(selectedModel)
+                    let retryText = try await transcription.transcribe(
+                        audioBuffer: audioBuffer,
+                        audioDuration: audioDuration,
+                        dictionary: dictionary
+                    )
+                    if !retryText.isEmpty {
+                        lastTranscription = retryText
+                        injection.inject(retryText, autoPaste: autoPaste)
+                        saveTranscription(text: retryText, audioDuration: audioDuration)
+                        phase = .ready
+                        showIconFeedback(.copied)
+                        if soundFeedbackEnabled { SoundFeedback.playCopied() }
+                        return
+                    }
+                } catch {
+                    print("[AppState] Retry also failed: \(error)")
+                }
             }
+
+            setError("Transcription failed: \(error.localizedDescription)")
+            if soundFeedbackEnabled { SoundFeedback.playError() }
         }
     }
-    
+
+    private func showNoSpeechFeedback() {
+        phase = .ready
+        showIconFeedback(.noSpeech)
+        if soundFeedbackEnabled { SoundFeedback.playNoSpeech() }
+        print("[AppState] No speech detected")
+    }
+
+    // MARK: - Icon Feedback
+
+    private func showIconFeedback(_ feedback: IconFeedback) {
+        feedbackTimer?.cancel()
+        iconFeedback = feedback
+        feedbackTimer = Task {
+            try? await Task.sleep(for: .seconds(Constants.MenuBarIcon.feedbackDuration))
+            guard !Task.isCancelled else { return }
+            iconFeedback = .none
+        }
+    }
+
+    // MARK: - Persistence
+
     private func saveTranscription(text: String, audioDuration: TimeInterval) {
         guard let modelContext else { return }
-        
         let record = TranscriptionRecord(
             text: text,
             modelVersion: transcription.currentModel,
             audioDuration: audioDuration
         )
         modelContext.insert(record)
-        
         try? modelContext.save()
     }
-    
+
+    // MARK: - Error
+
     func setError(_ message: String) {
         errorMessage = message
         phase = .error
     }
-    
+
     func retryModelLoad() {
-        Task {
-            await loadModel()
-        }
+        Task { await loadModel() }
     }
-    
-    func toggleRecording() {
-        switch phase {
-        case .ready:
-            startRecording()
-        case .listening:
-            stopRecordingAndTranscribe()
-        default:
-            break
+
+    // MARK: - Audio Device Change
+
+    private func registerAudioDeviceObserver() {
+        audioDeviceObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: audio,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.phase == .listening else { return }
+                print("[AppState] Audio device changed during recording, stopping...")
+                self.cancelRecording()
+            }
         }
     }
 }
