@@ -6,6 +6,10 @@
 <title>VoiceNative — Local Voice-to-Text for macOS</title>
 <meta name="description" content="Press a key, speak, release. Text appears at your cursor. No cloud, no latency, no subscription. Open source.">
 
+<!-- Favicon (inline SVG — waveform on green) -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%233B6B50'/%3E%3Cg stroke='white' stroke-width='2.5' stroke-linecap='round'%3E%3Cline x1='8' y1='12' x2='8' y2='20'/%3E%3Cline x1='13' y1='8' x2='13' y2='24'/%3E%3Cline x1='18' y1='6' x2='18' y2='26'/%3E%3Cline x1='23' y1='10' x2='23' y2='22'/%3E%3C/g%3E%3C/svg%3E">
+<meta name="theme-color" content="#3B6B50">
+
 <!-- Open Graph -->
 <meta property="og:title" content="VoiceNative — Local Voice-to-Text for macOS">
 <meta property="og:description" content="Press a key, speak, release. Text appears at your cursor. 100% on-device via Apple Neural Engine. Open source.">
@@ -43,6 +47,18 @@ body { background: var(--bg); color: var(--tx); font-family: 'Lora', Georgia, se
 .dot:hover, .dot.active { background: var(--ac); transform: scale(1.4); }
 .dot:hover::after { content: attr(data-l); position: absolute; right: 16px; top: 50%; transform: translateY(-50%); background: var(--tx); color: var(--bg); padding: 3px 9px; border-radius: 4px; font-size: 11px; font-family: var(--mono); white-space: nowrap; }
 
+/* Floating action bar */
+#fab { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px); z-index: 200; display: flex; gap: 8px; align-items: center; padding: 8px 12px; background: rgba(29,28,25,.92); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-radius: 12px; border: 1px solid rgba(255,255,255,.08); box-shadow: 0 8px 32px rgba(0,0,0,.18); transition: transform .4s cubic-bezier(.16,1,.3,1), opacity .3s; opacity: 0; }
+#fab.vis { transform: translateX(-50%) translateY(0); opacity: 1; }
+.fab-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border: none; border-radius: 8px; font-family: 'Lora', serif; font-size: 13px; cursor: pointer; text-decoration: none; transition: all .15s; white-space: nowrap; }
+.fab-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+.fab-primary { background: var(--ac); color: #fff; }
+.fab-primary:hover { background: var(--acm); }
+.fab-ghost { background: rgba(255,255,255,.08); color: rgba(255,255,255,.75); }
+.fab-ghost:hover { background: rgba(255,255,255,.15); color: #fff; }
+.fab-sep { width: 1px; height: 20px; background: rgba(255,255,255,.12); flex-shrink: 0; }
+@media (max-width: 520px) { .fab-btn span { display: none; } .fab-btn { padding: 8px 10px; } }
+
 .wrap { max-width: 680px; margin: 0 auto; padding: 0 28px; }
 
 /* Header */
@@ -54,8 +70,12 @@ h1 { font-family: 'Fraunces', serif; font-size: clamp(48px, 8vw, 72px); font-wei
 .meta { font-size: 13px; color: var(--txm); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .mdot { width: 3px; height: 3px; border-radius: 50%; background: var(--txm); }
 
+/* Live waveform in header */
+.hero-wave { margin: 32px 0 0; display: flex; align-items: center; justify-content: center; gap: 5px; height: 48px; }
+.hero-bar { width: 4px; border-radius: 2px; background: var(--ac); opacity: .6; transition: height .3s ease; }
+
 /* CTA buttons */
-.ctas { margin-top: 32px; display: flex; gap: 12px; flex-wrap: wrap; }
+.ctas { margin-top: 28px; display: flex; gap: 12px; flex-wrap: wrap; }
 .cta { display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; border-radius: 8px; font-family: 'Lora', serif; font-size: 15px; text-decoration: none; transition: all .2s; cursor: pointer; border: none; }
 .cta-primary { background: var(--ac); color: #fff; }
 .cta-primary:hover { background: var(--acm); }
@@ -82,6 +102,7 @@ code { font-family: var(--mono); font-size: .82em; background: var(--sur2); padd
 pre { background: #1A2420; color: #A9D8B8; padding: 22px 24px; border-radius: 10px; font-family: var(--mono); font-size: 13px; line-height: 1.7; overflow-x: auto; margin: 24px 0; border: 1px solid rgba(255,255,255,.04); }
 pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
 .kw { color: #7fbfaf; } .cm { color: #5A7A65; font-style: italic; } .st { color: #c8a96e; } .nm { color: #c8d8e8; }
+.plbl { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--txm); margin-bottom: -16px; margin-top: 24px; }
 
 /* Callouts */
 .callout { border-left: 2px solid var(--ac); padding: 14px 18px; background: var(--sur); border-radius: 0 8px 8px 0; margin: 28px 0; font-style: italic; color: var(--txm); font-size: 17px; line-height: 1.7; }
@@ -96,6 +117,27 @@ li { margin-bottom: 8px; }
 .fbox { padding: 10px 16px; background: var(--sur); border: 1px solid var(--bdr); border-radius: 8px; font-size: 14px; font-family: var(--mono); text-align: center; flex-shrink: 0; }
 .fbox.hi { background: rgba(59,107,80,.1); border-color: rgba(59,107,80,.3); color: var(--ac); }
 .farr { color: var(--txm); font-size: 18px; padding: 0 2px; }
+
+/* Architecture diagram */
+.arch { background: var(--sur); border: 1px solid var(--bdr); border-radius: 12px; padding: 28px; margin: 28px 0; }
+.arch-label { font-family: 'Fraunces', serif; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--txm); margin-bottom: 18px; }
+.arch-row { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.arch-box { flex: 1; min-width: 120px; padding: 12px 14px; border-radius: 8px; font-size: 12px; font-family: var(--mono); line-height: 1.5; }
+.arch-box .arch-name { font-weight: bold; font-size: 13px; margin-bottom: 2px; }
+.arch-box .arch-desc { color: var(--txm); font-family: 'Lora', serif; font-size: 12px; }
+.arch-app { background: rgba(59,107,80,.1); border: 1px solid rgba(59,107,80,.2); }
+.arch-svc { background: rgba(74,122,150,.08); border: 1px solid rgba(74,122,150,.18); }
+.arch-util { background: rgba(194,124,48,.08); border: 1px solid rgba(194,124,48,.18); }
+.arch-arrow { text-align: center; color: var(--txm); font-size: 13px; margin: 4px 0; letter-spacing: 2px; }
+.arch-legend { display: flex; gap: 16px; margin-top: 16px; flex-wrap: wrap; }
+.arch-leg { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--txm); }
+.arch-leg-dot { width: 10px; height: 10px; border-radius: 3px; }
+
+/* State machine */
+.states { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin: 20px 0; font-family: var(--mono); font-size: 13px; }
+.state { padding: 6px 12px; border-radius: 6px; background: var(--sur2); border: 1px solid var(--bdr); }
+.state.active { background: rgba(59,107,80,.15); border-color: rgba(59,107,80,.3); color: var(--ac); }
+.sarr { color: var(--txm); font-size: 14px; }
 
 /* Timeline items */
 .ti { display: flex; gap: 14px; padding: 16px 0; border-bottom: 1px solid var(--bdr); }
@@ -130,18 +172,12 @@ li { margin-bottom: 8px; }
 .ctbl td { padding: 11px 14px; border-bottom: 1px solid var(--bdr); vertical-align: top; line-height: 1.6; }
 .ctbl tr:hover td { background: var(--sur); }
 
-/* Share button */
-.share-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 20px 0; }
-.share-btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border: 1px solid var(--bdr); border-radius: 8px; background: var(--sur); color: var(--tx); font-family: 'Lora', serif; font-size: 14px; text-decoration: none; transition: all .2s; cursor: pointer; }
-.share-btn:hover { border-color: var(--ac); color: var(--ac); }
-.share-btn svg { width: 16px; height: 16px; }
-
 /* Scroll reveal */
 .reveal { opacity: 0; transform: translateY(18px); transition: opacity .65s, transform .65s; }
 .reveal.vis { opacity: 1; transform: none; }
 
 /* Footer */
-footer { border-top: 1px solid var(--bdr); padding: 36px 0; text-align: center; color: var(--txm); font-size: 14px; }
+footer { border-top: 1px solid var(--bdr); padding: 36px 0 80px; text-align: center; color: var(--txm); font-size: 14px; }
 footer a { color: var(--ac); text-decoration: none; }
 footer a:hover { text-decoration: underline; }
 </style>
@@ -149,6 +185,29 @@ footer a:hover { text-decoration: underline; }
 <body>
 <div id="prog"></div>
 <nav id="dots"></nav>
+
+<!-- Floating action bar -->
+<div id="fab">
+  <a class="fab-btn fab-primary" href="https://github.com/triggeredcode/voicenative/releases/latest">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    <span>Download</span>
+  </a>
+  <div class="fab-sep"></div>
+  <a class="fab-btn fab-ghost" href="https://github.com/triggeredcode/voicenative" target="_blank">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+    <span>Source</span>
+  </a>
+  <div class="fab-sep"></div>
+  <a class="fab-btn fab-ghost" id="fab-tweet" href="#" target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+    <span>Share</span>
+  </a>
+  <a class="fab-btn fab-ghost" id="fab-copy" onclick="navigator.clipboard.writeText(window.location.href);var b=this;b.querySelector('span').textContent='Copied!';setTimeout(function(){b.querySelector('span').textContent='Link'},1200)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+    <span>Link</span>
+  </a>
+</div>
+
 <div class="wrap">
 
 <header>
@@ -161,8 +220,9 @@ footer a:hover { text-decoration: underline; }
     <span>Apple Silicon</span><span class="mdot"></span>
     <span>~6 MB binary</span>
   </div>
+  <div class="hero-wave" id="hero-wave"></div>
   <div class="ctas">
-    <a class="cta cta-primary" href="../../releases">Download DMG</a>
+    <a class="cta cta-primary" href="https://github.com/triggeredcode/voicenative/releases/latest">Download DMG</a>
     <a class="cta cta-secondary" href="https://github.com/triggeredcode/voicenative">View Source</a>
   </div>
   <div class="toci">
@@ -170,7 +230,7 @@ footer a:hover { text-decoration: underline; }
     <ol>
       <li><a href="#how">How It Works</a></li>
       <li><a href="#defaults">What to Expect</a></li>
-      <li><a href="#journey">The Journey</a></li>
+      <li><a href="#arch">Architecture</a></li>
       <li><a href="#model">Choosing the Right Model</a></li>
       <li><a href="#ane">The Neural Engine Problem</a></li>
       <li><a href="#streaming">The Streaming Pipeline</a></li>
@@ -216,15 +276,77 @@ footer a:hover { text-decoration: underline; }
 </section>
 
 <!-- ═══════════════════════════════════════════════════════ -->
-<section id="journey" class="reveal">
-<h2>The Journey</h2>
-<p>Building a local voice transcription tool sounds simple. Record audio, run Whisper, paste text. The reality was a sequence of problems where each solution revealed the next constraint. Here is what we learned.</p>
+<section id="arch" class="reveal">
+<h2>Architecture</h2>
+<p>VoiceNative is a SwiftUI <code>MenuBarExtra</code> app driven by a single observable state machine. Six services handle distinct concerns. No service knows about any other &mdash; <code>AppState</code> coordinates them.</p>
+
+<h3>State machine</h3>
+<div class="states">
+  <div class="state">idle</div><span class="sarr">&rarr;</span>
+  <div class="state">modelLoading</div><span class="sarr">&rarr;</span>
+  <div class="state active">ready</div><span class="sarr">&rarr;</span>
+  <div class="state">listening</div><span class="sarr">&rarr;</span>
+  <div class="state">processing</div><span class="sarr">&rarr;</span>
+  <div class="state active">ready</div>
+</div>
+<p>Transitions are strictly enforced. A model reload cannot interrupt recording. An error during processing cannot clobber an active session. The state machine prevents an entire class of race conditions by making illegal states unrepresentable.</p>
+
+<h3>Component map</h3>
+<div class="arch">
+  <div class="arch-label">VoiceNativeApp (SwiftUI MenuBarExtra)</div>
+  <div class="arch-row">
+    <div class="arch-box arch-app"><div class="arch-name">AppState</div><div class="arch-desc">Central coordinator. Owns all services. Drives phase transitions.</div></div>
+  </div>
+  <div class="arch-arrow">&darr; &nbsp; owns &amp; coordinates &nbsp; &darr;</div>
+  <div class="arch-row">
+    <div class="arch-box arch-svc"><div class="arch-name">AudioCapture</div><div class="arch-desc">AVAudioEngine at 48kHz. Thread-safe ring buffer.</div></div>
+    <div class="arch-box arch-svc"><div class="arch-name">Transcription</div><div class="arch-desc">WhisperKit + CoreML. ANE inference. Hallucination filter.</div></div>
+    <div class="arch-box arch-svc"><div class="arch-name">Hotkey</div><div class="arch-desc">NSEvent global + local monitors. Toggle state tracking.</div></div>
+  </div>
+  <div class="arch-row">
+    <div class="arch-box arch-svc"><div class="arch-name">TextInjection</div><div class="arch-desc">NSPasteboard + simulated Cmd+V into frontmost app.</div></div>
+    <div class="arch-box arch-svc"><div class="arch-name">VAD</div><div class="arch-desc">Energy-based voice activity detection. Configurable sensitivity.</div></div>
+    <div class="arch-box arch-svc"><div class="arch-name">Permissions</div><div class="arch-desc">Microphone + Accessibility status checks.</div></div>
+  </div>
+  <div class="arch-arrow">&darr; &nbsp; utilities &nbsp; &darr;</div>
+  <div class="arch-row">
+    <div class="arch-box arch-util"><div class="arch-name">SoundFeedback</div><div class="arch-desc">NSSound cues for state transitions.</div></div>
+    <div class="arch-box arch-util"><div class="arch-name">LaunchAtLogin</div><div class="arch-desc">SMAppService registration.</div></div>
+    <div class="arch-box arch-util"><div class="arch-name">Constants</div><div class="arch-desc">Sample rates, keycodes, durations.</div></div>
+  </div>
+  <div class="arch-legend">
+    <div class="arch-leg"><div class="arch-leg-dot" style="background:rgba(59,107,80,.25)"></div> Coordinator</div>
+    <div class="arch-leg"><div class="arch-leg-dot" style="background:rgba(74,122,150,.25)"></div> Services</div>
+    <div class="arch-leg"><div class="arch-leg-dot" style="background:rgba(194,124,48,.25)"></div> Utilities</div>
+  </div>
+</div>
+
+<h3>Data flow</h3>
+<div class="flow">
+  <div class="fbox">Mic 48kHz</div>
+  <div class="farr">&rarr;</div>
+  <div class="fbox">Ring buffer</div>
+  <div class="farr">&rarr;</div>
+  <div class="fbox">Resample 16kHz</div>
+  <div class="farr">&rarr;</div>
+  <div class="fbox">vDSP normalize</div>
+  <div class="farr">&rarr;</div>
+  <div class="fbox hi">WhisperKit (ANE)</div>
+  <div class="farr">&rarr;</div>
+  <div class="fbox">Filter</div>
+  <div class="farr">&rarr;</div>
+  <div class="fbox hi">Cmd+V</div>
+</div>
+
+<p>Audio capture runs on AVAudioEngine's real-time thread. The buffer is lock-free. Resampling and normalization happen on the transcription task's thread, never on the audio callback. This separation prevents audio glitches during transcription.</p>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════ -->
 <section id="model" class="reveal">
 <h2>Choosing the Right Model</h2>
-<p>The first decision was which Whisper implementation to use. Two real options exist on macOS:</p>
+<p>Building a local voice transcription tool sounds simple. Record audio, run Whisper, paste text. The reality was a sequence of problems where each solution revealed the next constraint. It started with the model.</p>
+
+<p>Two real options exist on macOS:</p>
 
 <div class="cards">
   <div class="card">
@@ -409,7 +531,7 @@ vDSP_maxmgv(samples, <span class="nm">1</span>, &amp;peak, vDSP_Length(samples.c
 
 <h3>From DMG</h3>
 <ol>
-  <li>Download <code>VoiceNative.dmg</code> from <a href="../../releases" style="color:var(--ac)">Releases</a></li>
+  <li>Download <code>VoiceNative.dmg</code> from <a href="https://github.com/triggeredcode/voicenative/releases/latest" style="color:var(--ac)">Releases</a></li>
   <li>Open the DMG, drag VoiceNative to Applications</li>
   <li>Launch from Applications</li>
   <li>Grant Microphone and Accessibility permissions when prompted</li>
@@ -435,16 +557,6 @@ make dmg
 
 <!-- ═══════════════════════════════════════════════════════ -->
 <footer>
-  <div class="share-row" style="justify-content:center; margin-bottom: 20px;">
-    <a class="share-btn" id="tweet-btn" href="#" target="_blank" rel="noopener noreferrer">
-      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
-      Share on X
-    </a>
-    <a class="share-btn" onclick="navigator.clipboard.writeText(window.location.href);this.textContent='Copied!';setTimeout(()=>this.innerHTML='<svg viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' style=\'width:16px;height:16px\'><rect x=\'9\' y=\'9\' width=\'13\' height=\'13\' rx=\'2\'/><path d=\'M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1\'/></svg> Copy link',1500)" style="cursor:pointer">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-      Copy link
-    </a>
-  </div>
   <p>MIT License &middot; <a href="https://github.com/triggeredcode/voicenative">Source on GitHub</a></p>
   <p style="margin-top: 8px; font-size: 12px;">Built with care. Every word earns its place.</p>
 </footer>
@@ -458,11 +570,48 @@ window.addEventListener('scroll', () => {
   prog.style.width = (h > 0 ? window.scrollY / h * 100 : 0) + '%';
 }, { passive: true });
 
+// Floating action bar — appears after scrolling past header
+const fab = document.getElementById('fab');
+const header = document.querySelector('header');
+new IntersectionObserver(entries => {
+  fab.classList.toggle('vis', !entries[0].isIntersecting);
+}, { threshold: 0 }).observe(header);
+
+// Twitter share URL
+document.getElementById('fab-tweet').href =
+  'https://twitter.com/intent/tweet?text=' +
+  encodeURIComponent('VoiceNative \u2014 local voice-to-text for macOS. Press a key, speak, release. Text at your cursor. No cloud, no latency. Open source.') +
+  '&url=' + encodeURIComponent(window.location.href);
+
+// Hero waveform animation
+(function() {
+  const wave = document.getElementById('hero-wave');
+  const bars = 24;
+  for (let i = 0; i < bars; i++) {
+    const bar = document.createElement('div');
+    bar.className = 'hero-bar';
+    bar.style.height = '4px';
+    wave.appendChild(bar);
+  }
+  const els = wave.children;
+  function animate() {
+    const t = Date.now() / 1000;
+    for (let i = 0; i < bars; i++) {
+      const x = i / (bars - 1);
+      const envelope = Math.exp(-8 * (x - 0.5) * (x - 0.5));
+      const h = 4 + 36 * envelope * (0.5 + 0.5 * Math.sin(t * 2.5 + i * 0.45));
+      els[i].style.height = h + 'px';
+    }
+    requestAnimationFrame(animate);
+  }
+  animate();
+})();
+
 // Section navigation dots
 const SECS = [
   { id: 'how', l: 'How It Works' },
   { id: 'defaults', l: 'What to Expect' },
-  { id: 'journey', l: 'The Journey' },
+  { id: 'arch', l: 'Architecture' },
   { id: 'model', l: 'Choosing Model' },
   { id: 'ane', l: 'Neural Engine' },
   { id: 'streaming', l: 'Streaming' },
@@ -498,12 +647,6 @@ document.querySelectorAll('.reveal').forEach(el => {
     if (e.isIntersecting) e.target.classList.add('vis');
   }), { threshold: 0.06, rootMargin: '0px 0px -40px 0px' }).observe(el);
 });
-
-// Twitter share
-document.getElementById('tweet-btn').href =
-  'https://twitter.com/intent/tweet?text=' +
-  encodeURIComponent('VoiceNative \u2014 local voice-to-text for macOS. Press a key, speak, release. Text at your cursor. No cloud, no latency. Open source.') +
-  '&url=' + encodeURIComponent(window.location.href);
 </script>
 </body>
 </html>
