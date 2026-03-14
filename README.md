@@ -9,7 +9,7 @@ Download `VoiceNative.dmg` from [Releases](../../releases), open it, drag to App
 Or build from source (macOS 15+, Xcode 16+):
 
 ```bash
-git clone https://github.com/user/voicenative.git
+git clone https://github.com/triggeredcode/voicenative.git
 cd voicenative
 make dmg
 ```
