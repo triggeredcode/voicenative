@@ -24,6 +24,7 @@ mkdir -p "$APP_DIR/Contents/Resources"
 
 cp "$BINARY" "$APP_DIR/Contents/MacOS/$APP_NAME"
 cp "$SPM_DIR/Resources/Info.plist" "$APP_DIR/Contents/"
+cp "$SPM_DIR/Resources/AppIcon.icns" "$APP_DIR/Contents/Resources/"
 
 # Ad-hoc code sign so macOS doesn't complain about unsigned binaries
 echo "==> Code signing (ad-hoc)..."
