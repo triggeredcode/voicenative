@@ -1,198 +1,89 @@
 # VoiceNative
 
-Local, real-time voice-to-text for macOS. Press a key, speak, and the transcription appears at your cursor. No cloud, no latency, no subscriptions.
+Local voice-to-text for macOS. Press a key, speak, release. Text appears at your cursor. No cloud, no latency, no subscription.
+
+## Install
+
+Download `VoiceNative.dmg` from [Releases](../../releases), open it, drag to Applications. On first launch, grant Microphone and Accessibility permissions when prompted.
+
+Or build from source (macOS 15+, Xcode 16+):
+
+```bash
+git clone https://github.com/user/voicenative.git
+cd voicenative
+make dmg
+```
 
 ## How It Works
 
 ```
-Right Shift → Speak → Right Shift → Text pasted at cursor
+Right Shift → speak → Right Shift → text pasted at cursor
 ```
 
-VoiceNative sits in your menu bar. When you press Right Shift, it captures audio from your microphone, transcribes it locally using WhisperKit (Apple's CoreML-optimized Whisper), and pastes the result directly into whatever app you're working in.
+VoiceNative lives in your menu bar. It captures audio, transcribes locally using WhisperKit on Apple's Neural Engine, and pastes the result into whatever app you're working in. Audio never leaves your Mac.
 
-Everything runs on-device. Audio never leaves your Mac.
+## What to Expect
 
-## Features
+**First launch** downloads the Whisper model (~950 MB) and compiles it for the Neural Engine (~60–90 seconds). This is a one-time cost. Subsequent launches load in ~5 seconds.
 
-- **Global hotkey** (Right Shift) toggles recording from any app
-- **Auto-paste** transcription at the active cursor position
-- **Menu bar waveform** shows live recording status
-- **Streaming pipeline** transcribes in 30-second chunks while you're still speaking
-- **100% local** -- no network requests after initial model download
-- **Hardware accelerated** via Apple Neural Engine and CoreML
+**Recording limit** is 5 minutes by default. For recordings over 30 seconds, a background pipeline transcribes in 30-second chunks while you speak — only the final tail needs processing when you stop.
+
+**Transcription speed**: real-time factor ~0.3 (a 10-second recording transcribes in ~3 seconds).
+
+**Memory**: ~150 MB idle. The model stays warm via micro-inference every 2 minutes to prevent the Neural Engine from unloading it.
+
+## Usage
+
+| Action | Method |
+|--------|--------|
+| Start recording | **Right Shift** or click menu bar icon |
+| Stop + transcribe | **Right Shift** again |
+| Cancel | **Escape** |
+
+Text is pasted at your cursor and copied to the clipboard.
+
+### Settings
+
+Trigger mode (toggle or hold-to-talk), model selection, VAD sensitivity, silence timeout, auto-paste, custom dictionary, sound feedback.
+
+## Permissions
+
+1. **Microphone** — audio capture
+2. **Accessibility** — global hotkey detection and Cmd+V paste simulation
+
+System Settings → Privacy & Security.
 
 ## Architecture
 
 ```
 VoiceNativeApp (SwiftUI MenuBarExtra)
-├── AppState              State machine: idle → loading → ready → listening → processing
-├── AudioCaptureService   AVAudioEngine, 48kHz native → 16kHz mono via AVAudioConverter
-├── TranscriptionService  WhisperKit, CoreML, ANE-optimized model loading + inference
-├── HotkeyService         NSEvent global + local monitors for Right Shift detection
-├── TextInjectionService  NSPasteboard + CGEvent (Cmd+V) to paste into frontmost app
+├── AppState              idle → loading → ready → listening → processing
+├── AudioCaptureService   AVAudioEngine 48kHz → 16kHz mono via AVAudioConverter
+├── TranscriptionService  WhisperKit, CoreML, Neural Engine
+├── HotkeyService         NSEvent global + local monitors
+├── TextInjectionService  NSPasteboard + CGEvent (Cmd+V)
 ├── VADService            Energy-based voice activity detection
-└── SoundFeedback         Subtle audio cues (Tink for start, Submarine for completion)
+└── SoundFeedback         Audio cues (start, stop, copied, error)
 ```
 
-### Recording Pipeline
+### Pipeline
 
-1. **Capture**: AVAudioEngine records at the mic's native sample rate (typically 48kHz)
-2. **Resample**: AVAudioConverter downsamples to 16kHz mono Float32 (Whisper's input format)
-3. **Normalize**: vDSP peak normalization via Accelerate framework
-4. **Stream**: Background pipeline transcribes 30s chunks in parallel with recording
-5. **Finalize**: On stop, only the remaining audio tail needs transcription
-6. **Inject**: Text is copied to clipboard and Cmd+V is simulated into the source app
+1. Capture at mic's native rate (48kHz)
+2. Resample to 16kHz mono Float32
+3. Normalize via vDSP (Accelerate framework)
+4. Stream 30s chunks to WhisperKit in background
+5. On stop, transcribe remaining tail
+6. Paste into frontmost app
 
-### Model Loading
+### Key Decisions
 
-- First launch: downloads `openai_whisper-large-v3_turbo_955MB` from Hugging Face (~950MB)
-- CoreML compiles for the Neural Engine on first run (~60-90s one-time cost)
-- Subsequent launches load from cache in ~5 seconds
-- Keepalive timer prewarms the model every 2 minutes to prevent unload
+**WhisperKit over whisper.cpp** — Apple's CoreML integration for Whisper, purpose-built for Neural Engine acceleration on Apple Silicon.
 
-## Performance
+**NSEvent monitors over CGEventTap** — CGEventTap requires Input Monitoring permission and silently fails when the app's own windows have focus. NSEvent monitors need only Accessibility permission.
 
-| Metric | Target | Achieved |
-|--------|--------|----------|
-| Model load (cached) | < 10s | ~5s |
-| Real-time factor (RTF) | < 0.5 | ~0.3 |
-| Memory (idle) | < 200MB | ~150MB |
-| Binary size | minimal | 6MB |
+**Streaming pipeline** — waiting until the end of a long recording to transcribe adds delay. Chunking in the background means only the tail needs processing on stop.
 
-### Hardware Acceleration
-
-VoiceNative runs the Whisper encoder on Apple's **Neural Engine (ANE)** via CoreML, which is significantly faster than CPU-only inference. The text decoder runs on CPU + ANE combined. This is configured via `ModelComputeOptions`:
-
-```swift
-ModelComputeOptions(
-    audioEncoderCompute: .cpuAndNeuralEngine,
-    textDecoderCompute: .cpuAndNeuralEngine
-)
-```
-
-The model uses quantized weights (`large-v3-turbo`) to reduce memory footprint while maintaining transcription quality.
-
-## Installation
-
-### From DMG
-
-1. Download `VoiceNative.dmg` from the dist folder (or build it yourself)
-2. Open the DMG, drag VoiceNative to Applications
-3. Launch from Applications
-4. Grant permissions when prompted (Microphone, Accessibility)
-
-### Build from Source
-
-Requires macOS 15 (Sequoia) and Xcode 16+.
-
-```bash
-git clone <repo-url>
-cd macvoice
-
-# Debug build + run
-make run
-
-# Release .app bundle
-make app
-# Output: dist/VoiceNative.app
-
-# Release .app + DMG installer
-make dmg
-# Output: dist/VoiceNative.dmg
-```
-
-## Usage
-
-### Recording
-
-| Action | Method |
-|--------|--------|
-| Start recording | Press **Right Shift** or click mic icon in menu bar |
-| Stop + transcribe | Press **Right Shift** again or click stop icon |
-| Cancel recording | Press **Escape** |
-
-After transcription completes, the text is automatically pasted at your cursor position and copied to the clipboard.
-
-### Menu Bar
-
-The menu bar icon reflects the current state:
-
-| Icon | State |
-|------|-------|
-| `mic` | Ready (green dot) |
-| `waveform` (animated) | Recording |
-| `⋯` (spinning) | Processing |
-| `↓` (pulsing) | Loading model |
-| `✓` | Transcription copied |
-
-Click the menu bar icon to see the popover -- a single row of icon buttons: record/stop, copy last transcription, history, settings, and quit. History includes search and a "Clear All" option to delete all records.
-
-### Settings
-
-- **Trigger Mode**: Toggle (press to start/stop) or Hold-to-Talk
-- **Model Selection**: Choose Whisper model variant
-- **VAD Sensitivity**: Low / Medium / High (active in Hold-to-Talk mode)
-- **Silence Timeout**: Auto-stop after silence (1-5 seconds)
-- **Auto-Paste**: Toggle automatic Cmd+V after transcription
-- **Custom Dictionary**: Add technical terms for better recognition
-- **Sound Feedback**: Toggle audio cues
-
-## Permissions
-
-VoiceNative needs two macOS permissions:
-
-1. **Microphone** -- to capture audio for transcription
-2. **Accessibility** -- to simulate Cmd+V paste and detect the global hotkey
-
-Grant these in System Settings > Privacy & Security when prompted on first launch.
-
-## Technical Decisions
-
-**Why WhisperKit over whisper.cpp?** WhisperKit is Apple's first-party CoreML integration for Whisper, purpose-built for ANE acceleration on Apple Silicon. It ships as a Swift package with native CoreML model compilation.
-
-**Why NSEvent monitors over CGEventTap?** CGEventTap requires Input Monitoring permission and can silently fail when the app's own windows have focus. NSEvent global + local monitors (a proven pattern for macOS menu bar apps) cover both other-app and own-app events with just Accessibility permission.
-
-**Why a streaming pipeline?** For long recordings (> 30s), waiting until the end to transcribe adds noticeable delay. The streaming pipeline transcribes 30-second chunks in the background while recording continues, so only the final tail needs processing when you stop.
-
-**Why no cloud?** Privacy. Voice data is sensitive. Every API call is a liability. Local inference on Apple Silicon is fast enough for real-time transcription.
-
-## Project Structure
-
-```
-macvoice/
-├── VoiceNative/
-│   ├── Package.swift
-│   ├── Resources/
-│   │   ├── Info.plist
-│   │   └── VoiceNative.entitlements
-│   └── Sources/VoiceNative/
-│       ├── App/
-│       │   ├── VoiceNativeApp.swift       Entry point, MenuBarExtra
-│       │   └── AppState.swift             Central state machine
-│       ├── Services/
-│       │   ├── AudioCaptureService.swift  Mic recording + resampling
-│       │   ├── TranscriptionService.swift WhisperKit integration
-│       │   ├── HotkeyService.swift        Global hotkey handling
-│       │   ├── TextInjectionService.swift Clipboard + paste
-│       │   └── VADService.swift           Voice activity detection
-│       ├── Views/
-│       │   ├── MenuBarPopover.swift       Minimal popover UI
-│       │   ├── SettingsView.swift         Settings tabs
-│       │   ├── HistoryView.swift          Transcription history
-│       │   └── OnboardingView.swift       First-run setup
-│       ├── Config/
-│       │   └── TechnicalDictionary.swift  Engineering vocabulary
-│       └── Utilities/
-│           ├── Constants.swift
-│           ├── SoundFeedback.swift
-│           ├── LaunchAtLogin.swift
-│           └── PermissionManager.swift
-├── scripts/
-│   ├── package-app.sh                    Build .app bundle
-│   └── create-dmg.sh                     Create DMG installer
-├── Makefile
-└── README.md
-```
+**No cloud** — voice data is sensitive. Local inference on Apple Silicon is fast enough.
 
 ## License
 
