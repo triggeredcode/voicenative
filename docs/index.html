@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VoiceNative — Local Voice-to-Text for macOS</title>
+<meta name="description" content="Press a key, speak, release. Text appears at your cursor. No cloud, no latency, no subscription. Open source.">
+
+<!-- Open Graph -->
+<meta property="og:title" content="VoiceNative — Local Voice-to-Text for macOS">
+<meta property="og:description" content="Press a key, speak, release. Text appears at your cursor. 100% on-device via Apple Neural Engine. Open source.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://github.com/user/voicenative">
+
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="VoiceNative — Local Voice-to-Text for macOS">
+<meta name="twitter:description" content="Press a key, speak, release. Text appears at your cursor. 100% on-device. Open source.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,200;0,9..144,300;0,9..144,400;1,9..144,200&family=Lora:ital,wght@0,400;0,500;1,400;1,500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #F6F2EB; --sur: #EDE8DE; --sur2: #E3DDD2;
+  --tx: #1D1C19; --txm: #7A776E;
+  --ac: #3B6B50; --acm: #4E8A68; --acg: rgba(59,107,80,.18);
+  --am: #C27C30; --amg: rgba(194,124,48,.22);
+  --rd: #B94040; --off: #D5D0C8; --bdr: #CEC9BC;
+  --bl: #4A7A96; --pu: #7A60A8;
+  --mono: 'Courier New', monospace;
+}
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { background: var(--bg); color: var(--tx); font-family: 'Lora', Georgia, serif; font-size: 18px; line-height: 1.82; }
+
+/* Progress bar */
+#prog { position: fixed; top: 0; left: 0; height: 2px; background: var(--ac); z-index: 999; transition: width .08s linear; pointer-events: none; }
+
+/* Section dots */
+#dots { position: fixed; left: calc(50% + 380px); top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 100; }
+@media (max-width: 1200px) { #dots { display: none; } }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--off); cursor: pointer; transition: background .2s, transform .2s; position: relative; }
+.dot:hover, .dot.active { background: var(--ac); transform: scale(1.4); }
+.dot:hover::after { content: attr(data-l); position: absolute; right: 16px; top: 50%; transform: translateY(-50%); background: var(--tx); color: var(--bg); padding: 3px 9px; border-radius: 4px; font-size: 11px; font-family: var(--mono); white-space: nowrap; }
+
+.wrap { max-width: 680px; margin: 0 auto; padding: 0 28px; }
+
+/* Header */
+header { padding: 72px 0 56px; border-bottom: 1px solid var(--bdr); }
+.hlbl { font-family: 'Fraunces', serif; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--ac); margin-bottom: 22px; display: flex; align-items: center; gap: 10px; }
+.hlbl::after { content: ''; flex: 0 0 32px; height: 1px; background: var(--ac); opacity: .5; }
+h1 { font-family: 'Fraunces', serif; font-size: clamp(48px, 8vw, 72px); font-weight: 200; line-height: 1.08; letter-spacing: -.03em; margin-bottom: 22px; }
+.sub { font-family: 'Lora', serif; font-size: 19px; font-style: italic; color: var(--txm); line-height: 1.65; margin-bottom: 28px; max-width: 520px; }
+.meta { font-size: 13px; color: var(--txm); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.mdot { width: 3px; height: 3px; border-radius: 50%; background: var(--txm); }
+
+/* CTA buttons */
+.ctas { margin-top: 32px; display: flex; gap: 12px; flex-wrap: wrap; }
+.cta { display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; border-radius: 8px; font-family: 'Lora', serif; font-size: 15px; text-decoration: none; transition: all .2s; cursor: pointer; border: none; }
+.cta-primary { background: var(--ac); color: #fff; }
+.cta-primary:hover { background: var(--acm); }
+.cta-secondary { background: transparent; color: var(--ac); border: 1px solid var(--ac); }
+.cta-secondary:hover { background: var(--ac); color: #fff; }
+
+/* TOC */
+.toci { background: var(--sur); border: 1px solid var(--bdr); border-radius: 10px; padding: 22px 26px; margin: 36px 0 0; }
+.toci h4 { font-family: 'Fraunces', serif; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--txm); margin-bottom: 14px; }
+.toci ol { margin: 0; padding-left: 20px; }
+.toci li { margin-bottom: 5px; font-size: 14px; }
+.toci a { color: var(--ac); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color .15s; }
+.toci a:hover { border-color: var(--ac); }
+
+/* Article */
+article { padding: 68px 0 120px; }
+section { margin-bottom: 72px; }
+h2 { font-family: 'Fraunces', serif; font-size: 30px; font-weight: 300; line-height: 1.22; color: var(--tx); margin-bottom: 22px; margin-top: 64px; }
+h3 { font-family: 'Fraunces', serif; font-size: 21px; font-weight: 300; font-style: italic; color: var(--tx); margin-bottom: 16px; margin-top: 40px; }
+p { margin-bottom: 20px; }
+strong { font-weight: 500; }
+em { font-style: italic; }
+code { font-family: var(--mono); font-size: .82em; background: var(--sur2); padding: 2px 7px; border-radius: 4px; color: var(--ac); }
+pre { background: #1A2420; color: #A9D8B8; padding: 22px 24px; border-radius: 10px; font-family: var(--mono); font-size: 13px; line-height: 1.7; overflow-x: auto; margin: 24px 0; border: 1px solid rgba(255,255,255,.04); }
+pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+.kw { color: #7fbfaf; } .cm { color: #5A7A65; font-style: italic; } .st { color: #c8a96e; } .nm { color: #c8d8e8; }
+
+/* Callouts */
+.callout { border-left: 2px solid var(--ac); padding: 14px 18px; background: var(--sur); border-radius: 0 8px 8px 0; margin: 28px 0; font-style: italic; color: var(--txm); font-size: 17px; line-height: 1.7; }
+.callout.w { border-left-color: var(--am); }
+.callout.i { border-left-color: var(--bl); }
+
+ul, ol { margin: 0 0 20px 26px; }
+li { margin-bottom: 8px; }
+
+/* Flow diagram */
+.flow { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 28px 0; }
+.fbox { padding: 10px 16px; background: var(--sur); border: 1px solid var(--bdr); border-radius: 8px; font-size: 14px; font-family: var(--mono); text-align: center; flex-shrink: 0; }
+.fbox.hi { background: rgba(59,107,80,.1); border-color: rgba(59,107,80,.3); color: var(--ac); }
+.farr { color: var(--txm); font-size: 18px; padding: 0 2px; }
+
+/* Timeline items */
+.ti { display: flex; gap: 14px; padding: 16px 0; border-bottom: 1px solid var(--bdr); }
+.ti:last-child { border: none; }
+.tb { flex: 0 0 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: 'Fraunces', serif; font-size: 14px; font-weight: 300; margin-top: 3px; }
+.tb.g { background: rgba(59,107,80,.12); color: var(--ac); }
+.tb.a { background: rgba(194,124,48,.12); color: var(--am); }
+.tb.b { background: rgba(74,122,150,.12); color: var(--bl); }
+.ttl { font-weight: 500; font-size: 16px; margin-bottom: 4px; }
+.tdc { font-size: 15px; color: var(--txm); line-height: 1.65; }
+
+/* Cards */
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 24px 0; }
+@media (max-width: 520px) { .cards { grid-template-columns: 1fr; } }
+.card { background: var(--sur); border: 1px solid var(--bdr); border-radius: 10px; padding: 20px; }
+.ct { font-family: 'Fraunces', serif; font-weight: 400; font-size: 16px; margin-bottom: 8px; }
+.card p { font-size: 14px; color: var(--txm); line-height: 1.65; margin: 0; }
+
+/* Stats */
+.stats { display: flex; gap: 28px; margin: 24px 0; flex-wrap: wrap; }
+.sl { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--txm); }
+.sv { font-family: 'Fraunces', serif; font-size: 24px; font-weight: 200; line-height: 1.2; }
+
+/* Formulas */
+.fml { background: var(--sur); border: 1px solid var(--bdr); border-radius: 8px; padding: 18px 22px; margin: 20px 0; font-family: var(--mono); font-size: 14px; line-height: 2; color: var(--tx); overflow-x: auto; }
+.fml .fl { font-family: 'Lora', serif; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--txm); display: block; margin-bottom: 6px; }
+.fml .fn { font-family: 'Lora', serif; font-size: 13px; color: var(--txm); font-style: italic; display: block; margin-top: 6px; }
+
+/* Table */
+.ctbl { width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 14px; }
+.ctbl th { font-family: 'Fraunces', serif; font-weight: 300; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; padding: 10px 14px; text-align: left; border-bottom: 2px solid var(--bdr); color: var(--txm); }
+.ctbl td { padding: 11px 14px; border-bottom: 1px solid var(--bdr); vertical-align: top; line-height: 1.6; }
+.ctbl tr:hover td { background: var(--sur); }
+
+/* Share button */
+.share-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 20px 0; }
+.share-btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border: 1px solid var(--bdr); border-radius: 8px; background: var(--sur); color: var(--tx); font-family: 'Lora', serif; font-size: 14px; text-decoration: none; transition: all .2s; cursor: pointer; }
+.share-btn:hover { border-color: var(--ac); color: var(--ac); }
+.share-btn svg { width: 16px; height: 16px; }
+
+/* Scroll reveal */
+.reveal { opacity: 0; transform: translateY(18px); transition: opacity .65s, transform .65s; }
+.reveal.vis { opacity: 1; transform: none; }
+
+/* Footer */
+footer { border-top: 1px solid var(--bdr); padding: 36px 0; text-align: center; color: var(--txm); font-size: 14px; }
+footer a { color: var(--ac); text-decoration: none; }
+footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div id="prog"></div>
+<nav id="dots"></nav>
+<div class="wrap">
+
+<header>
+  <div class="hlbl">Open Source &middot; macOS</div>
+  <h1>Voice<br>Native</h1>
+  <p class="sub">Press a key, speak, release. Text appears at your cursor. No cloud, no latency, no subscription.</p>
+  <div class="meta">
+    <span>MIT License</span><span class="mdot"></span>
+    <span>macOS 15+</span><span class="mdot"></span>
+    <span>Apple Silicon</span><span class="mdot"></span>
+    <span>~6 MB binary</span>
+  </div>
+  <div class="ctas">
+    <a class="cta cta-primary" href="../../releases">Download DMG</a>
+    <a class="cta cta-secondary" href="https://github.com/user/voicenative">View Source</a>
+  </div>
+  <div class="toci">
+    <h4>On this page</h4>
+    <ol>
+      <li><a href="#how">How It Works</a></li>
+      <li><a href="#defaults">What to Expect</a></li>
+      <li><a href="#journey">The Journey</a></li>
+      <li><a href="#model">Choosing the Right Model</a></li>
+      <li><a href="#ane">The Neural Engine Problem</a></li>
+      <li><a href="#streaming">The Streaming Pipeline</a></li>
+      <li><a href="#audio">Audio Engineering</a></li>
+      <li><a href="#hotkeys">Hotkey Engineering</a></li>
+      <li><a href="#hallucinations">Fighting Hallucinations</a></li>
+      <li><a href="#install">Installation</a></li>
+    </ol>
+  </div>
+</header>
+
+<article>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<section id="how" class="reveal">
+<h2>How It Works</h2>
+<div class="flow">
+  <div class="fbox hi">Right Shift</div>
+  <div class="farr">&rarr;</div>
+  <div class="fbox">Speak</div>
+  <div class="farr">&rarr;</div>
+  <div class="fbox hi">Right Shift</div>
+  <div class="farr">&rarr;</div>
+  <div class="fbox">Text at cursor</div>
+</div>
+<p>VoiceNative sits in your menu bar. When you press Right Shift, it captures audio from your microphone, transcribes it locally using <strong>WhisperKit</strong> on Apple's Neural Engine, and pastes the result directly into whatever app you're working in.</p>
+<p>Everything runs on-device. Audio never leaves your Mac. No API keys, no accounts, no recurring costs.</p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<section id="defaults" class="reveal">
+<h2>What to Expect</h2>
+<div class="stats">
+  <div><span class="sl">First launch</span><div class="sv">~90s</div></div>
+  <div><span class="sl">Subsequent loads</span><div class="sv">~5s</div></div>
+  <div><span class="sl">Real-time factor</span><div class="sv">0.3</div></div>
+  <div><span class="sl">Memory (idle)</span><div class="sv">~150 MB</div></div>
+</div>
+<p><strong>First launch</strong> downloads the Whisper model (~950 MB) from Hugging Face and compiles it for the Neural Engine. This takes 60&ndash;90 seconds. It happens once. Every launch after loads from cache in about 5 seconds.</p>
+<p><strong>Recording limit</strong> is 5 minutes. This is a deliberate default &mdash; the same limit macOS dictation uses. For recordings over 30 seconds, a background pipeline transcribes in chunks while you speak, so you don't wait at the end.</p>
+<p><strong>Model keepalive</strong>: the Neural Engine can unload CoreML models after periods of inactivity. VoiceNative runs a micro-inference (silent audio) every 2 minutes to keep the pipeline warm. Without this, the first transcription after idle can take 30+ seconds instead of milliseconds.</p>
+<div class="callout">A 10-second recording transcribes in about 3 seconds. A 2-minute recording, with streaming, finishes within seconds of you pressing stop.</div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<section id="journey" class="reveal">
+<h2>The Journey</h2>
+<p>Building a local voice transcription tool sounds simple. Record audio, run Whisper, paste text. The reality was a sequence of problems where each solution revealed the next constraint. Here is what we learned.</p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<section id="model" class="reveal">
+<h2>Choosing the Right Model</h2>
+<p>The first decision was which Whisper implementation to use. Two real options exist on macOS:</p>
+
+<div class="cards">
+  <div class="card">
+    <div class="ct">whisper.cpp</div>
+    <p>C/C++ implementation. GGML model format. Runs on Metal (GPU). Loads instantly &mdash; just a file read. The ecosystem standard.</p>
+  </div>
+  <div class="card">
+    <div class="ct">WhisperKit</div>
+    <p>Apple's CoreML integration. Purpose-built for Neural Engine (ANE) on Apple Silicon. Swift-native. Ships as an SPM package.</p>
+  </div>
+</div>
+
+<p>We chose <strong>WhisperKit</strong>. The Neural Engine is a dedicated inference accelerator that Apple includes in every M-series chip. It runs machine learning models without competing for GPU or CPU time. For a menu bar app that needs to transcribe in the background without affecting the user's workflow, that matters.</p>
+
+<p>The trade-off: CoreML requires a compilation step. The first time you load a Whisper model through CoreML, it compiles the neural network graph specifically for your hardware's Neural Engine configuration. This takes 60&ndash;90 seconds. whisper.cpp + Metal loads in under a second.</p>
+
+<div class="callout w">We initially measured 97 seconds for the first model load. After identifying the correct cache path (<code>~/Documents/huggingface/models/argmaxinc/whisperkit-coreml</code>), subsequent loads dropped to ~5 seconds. The difference between "broken" and "fast" was a single directory path.</div>
+
+<p>The model is <code>openai_whisper-large-v3_turbo</code> &mdash; a 955 MB quantized variant. It balances transcription quality against memory footprint. We tried smaller models; they hallucinated more on short utterances. We tried unquantized; memory climbed without meaningful accuracy improvement.</p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<section id="ane" class="reveal">
+<h2>The Neural Engine Problem</h2>
+<p>Choosing the Neural Engine opened a set of problems that don't exist with GPU inference.</p>
+
+<h3>Compute unit selection</h3>
+<p>WhisperKit lets you choose compute units for each model component: the audio encoder and the text decoder. The options are CPU-only, CPU+GPU, or CPU+Neural Engine.</p>
+
+<p>Our first working configuration used <code>cpuAndGPU</code> for the encoder. It loaded fast, transcribed correctly, and seemed fine. Then we switched to <code>cpuAndNeuralEngine</code>.</p>
+
+<div class="fml">
+  <span class="fl">The compute configuration that stuck</span>
+  melCompute:          .cpuAndGPU
+  audioEncoderCompute: .cpuAndNeuralEngine
+  textDecoderCompute:  .cpuAndNeuralEngine
+  prefillCompute:      .cpuOnly
+  <span class="fn">The mel spectrogram runs on GPU (fast, no ANE compilation). Encoder and decoder run on the Neural Engine (optimized for sustained inference). Prefill stays on CPU (small overhead, avoids ANE contention).</span>
+</div>
+
+<p>The transcription speed improvement was significant. But we discovered a critical constraint:</p>
+
+<div class="callout w">Switching compute units &mdash; even once &mdash; invalidates the CoreML cache. If you load with GPU encoder, then switch to ANE encoder, CoreML recompiles from scratch. Another 90-second wait. The cache is keyed by the exact compute unit configuration.</div>
+
+<p>We tried splitting: GPU for the encoder (fast load), ANE for the decoder (fast inference). The moment you mix compute units across model components, CoreML sometimes recompiles the full graph. We abandoned the hybrid approach and committed to full ANE.</p>
+
+<h3>The keepalive problem</h3>
+<p>After the model loads, it stays in Neural Engine memory &mdash; until macOS decides to reclaim it. We observed the ANE silently unloading the model after a few minutes of inactivity. The next transcription would then take 30+ seconds as CoreML reloaded and re-optimized.</p>
+
+<p>The fix: a keepalive timer that runs a micro-inference (transcribing an empty 0.5-second buffer) every 2 minutes. This keeps the CoreML/ANE pipeline warm without visible side effects.</p>
+
+<pre><code><span class="cm">/// Run a micro-inference to keep CoreML/ANE pipeline warm.</span>
+<span class="kw">func</span> prewarm() <span class="kw">async</span> {
+    <span class="kw">let</span> silence = [<span class="nm">Float</span>](repeating: <span class="nm">0</span>, count: <span class="nm">8000</span>)
+    <span class="kw">let</span> options = DecodingOptions(
+        task: .transcribe, language: <span class="st">"en"</span>,
+        withoutTimestamps: <span class="kw">true</span>, suppressBlank: <span class="kw">true</span>
+    )
+    _ = <span class="kw">try</span>? <span class="kw">await</span> whisperKit.transcribe(
+        audioArray: silence, decodeOptions: options
+    )
+}</code></pre>
+
+<p>We also register for <code>NSWorkspace.didWakeNotification</code> to prewarm after the Mac wakes from sleep &mdash; another scenario where ANE unloads models.</p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<section id="streaming" class="reveal">
+<h2>The Streaming Pipeline</h2>
+<p>Whisper's architecture has a hard limit: it processes a maximum of 30 seconds of audio per inference pass. If you record for 2 minutes and wait until the end to transcribe, the user sits through four sequential 30-second passes. At a real-time factor of 0.3, that's ~36 seconds of waiting.</p>
+
+<p>The insight: you can transcribe chunks <em>while the user is still speaking</em>.</p>
+
+<div class="flow">
+  <div class="fbox hi">Record</div>
+  <div class="farr">&rarr;</div>
+  <div class="fbox">Every 30s: transcribe chunk in background</div>
+  <div class="farr">&rarr;</div>
+  <div class="fbox hi">Stop</div>
+  <div class="farr">&rarr;</div>
+  <div class="fbox">Only transcribe remaining tail</div>
+</div>
+
+<p>The pipeline runs on a 5-second polling loop. When accumulated raw audio exceeds 30 seconds, it snapshots that chunk, resamples it to 16kHz, and sends it to WhisperKit. The raw sample index advances past the chunk to prevent re-transcription.</p>
+
+<h3>The math</h3>
+
+<div class="fml">
+  <span class="fl">Without streaming (worst case)</span>
+  Wait time = ceil(duration / 30) &times; 30 &times; RTF
+  <span class="fn">A 2-minute recording: ceil(120/30) &times; 30 &times; 0.3 = 36 seconds of post-stop waiting.</span>
+</div>
+
+<div class="fml">
+  <span class="fl">With streaming</span>
+  Wait time = (duration mod 30) &times; RTF
+  <span class="fn">Same 2-minute recording: (120 mod 30) &times; 0.3 = 0 seconds. The pipeline caught up completely. In practice, 0&ndash;9 seconds depending on where in the 30s cycle you stop.</span>
+</div>
+
+<p>On stop, the completed chunk texts are concatenated with whatever remains in the tail. The result: a 2-minute recording feels nearly instant.</p>
+
+<div class="callout">The streaming pipeline was the single largest perceived-performance improvement. The actual transcription speed didn't change &mdash; we just moved the work from "after you stop" to "while you're still talking."</div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<section id="audio" class="reveal">
+<h2>Audio Engineering</h2>
+<p>Whisper expects 16kHz mono Float32 audio. macOS microphones typically run at 48kHz. The path between them matters more than it seems.</p>
+
+<h3>Capture at native rate, resample on demand</h3>
+<p>We use AVAudioEngine configured at the microphone's native sample rate (typically 48kHz). The raw samples accumulate in a thread-safe buffer. When a chunk or the final recording needs transcription, we resample to 16kHz mono using AVAudioConverter.</p>
+
+<p>An alternative approach captures directly at 16kHz using CoreAudio's AUHAL unit. This avoids the resampling step entirely. We chose AVAudioEngine because it handles device switching gracefully and doesn't require low-level CoreAudio buffer management.</p>
+
+<h3>Normalization</h3>
+<p>After resampling, the audio is peak-normalized using Apple's Accelerate framework (vDSP). This ensures consistent input levels regardless of microphone gain settings:</p>
+
+<pre><code><span class="cm">// Find peak amplitude</span>
+<span class="kw">var</span> peak: <span class="nm">Float</span> = <span class="nm">0</span>
+vDSP_maxmgv(samples, <span class="nm">1</span>, &amp;peak, vDSP_Length(samples.count))
+
+<span class="cm">// Scale to [-1, 1] range</span>
+<span class="kw">if</span> peak > <span class="nm">0</span> {
+    <span class="kw">var</span> scale = <span class="nm">1.0</span> / peak
+    vDSP_vsmul(samples, <span class="nm">1</span>, &amp;scale, &amp;samples, <span class="nm">1</span>,
+               vDSP_Length(samples.count))
+}</code></pre>
+
+<p>Without normalization, quiet microphones produce low-amplitude samples that Whisper interprets as silence, triggering hallucinations instead of transcription.</p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<section id="hotkeys" class="reveal">
+<h2>Hotkey Engineering</h2>
+<p>A voice transcription tool lives or dies by how fast it responds to the trigger key. Two approaches exist on macOS for detecting global keypresses:</p>
+
+<div class="cards">
+  <div class="card">
+    <div class="ct">CGEventTap</div>
+    <p>Low-level Core Graphics event tap. Requires Input Monitoring permission. Can silently stop working when the app's own windows have focus.</p>
+  </div>
+  <div class="card">
+    <div class="ct">NSEvent monitors</div>
+    <p>AppKit-level global + local monitors. Requires only Accessibility permission. Works reliably across all app states.</p>
+  </div>
+</div>
+
+<p>We use <strong>NSEvent monitors</strong> &mdash; a <code>globalMonitorForEvents</code> for keypresses in other apps and a <code>localMonitorForEvents</code> for keypresses in our own popover or settings window. This is a well-established pattern for macOS menu bar apps.</p>
+
+<p>The subtle part is modifier key detection. Right Shift is a modifier, not a character key. It arrives as <code>.flagsChanged</code>, not <code>.keyDown</code>. We check the raw keycode (60 for Right Shift) on <code>flagsChanged</code> events and maintain toggle state manually &mdash; press once to start, press again to stop.</p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<section id="hallucinations" class="reveal">
+<h2>Fighting Hallucinations</h2>
+<p>Whisper hallucinates. When given silence or near-silence, it generates confident, fluent text that was never spoken. Common outputs include:</p>
+<ul>
+  <li>"Thank you for watching"</li>
+  <li>"Please like and subscribe"</li>
+  <li>"See you in the next video"</li>
+  <li>Repeated phrases ("you you you you you you")</li>
+  <li>Non-ASCII characters for English input</li>
+</ul>
+
+<p>These aren't edge cases. They happen routinely when the user pauses or when background noise is low. The hallucinations come from Whisper's training data &mdash; it was trained heavily on YouTube transcripts.</p>
+
+<h3>The filter</h3>
+<p>We run a post-transcription filter that catches three categories:</p>
+
+<div>
+  <div class="ti"><div class="tb g">1</div><div><div class="ttl">Pattern matching</div><div class="tdc">A list of known hallucination phrases ("thank you for watching", "goodbye", etc.). If the entire transcription matches one of these, discard it.</div></div></div>
+  <div class="ti"><div class="tb a">2</div><div><div class="ttl">N-gram repetition</div><div class="tdc">Detect 3+ repetitions of the same word or phrase. "You you you you" or "the the the the the the" are discarded. Checks n-grams from 1 to 5 words.</div></div></div>
+  <div class="ti"><div class="tb b">3</div><div><div class="ttl">Character set validation</div><div class="tdc">For English transcription, reject results where less than half the characters are ASCII. Catches CJK or Cyrillic hallucinations that Whisper sometimes produces.</div></div></div>
+</div>
+
+<div class="callout i">We initially tried using a technical dictionary as prompt tokens to guide Whisper toward domain-specific vocabulary. This made hallucinations worse &mdash; prompt tokens add latency to every decoder step and can bias the model toward generating the prompt itself. We removed them and moved vocabulary correction to post-processing.</div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<section id="install" class="reveal">
+<h2>Installation</h2>
+
+<h3>From DMG</h3>
+<ol>
+  <li>Download <code>VoiceNative.dmg</code> from <a href="../../releases" style="color:var(--ac)">Releases</a></li>
+  <li>Open the DMG, drag VoiceNative to Applications</li>
+  <li>Launch from Applications</li>
+  <li>Grant Microphone and Accessibility permissions when prompted</li>
+</ol>
+
+<h3>Build from source</h3>
+<p>Requires macOS 15 (Sequoia) and Xcode 16+.</p>
+<pre><code>git clone https://github.com/user/voicenative.git
+cd voicenative
+make dmg
+<span class="cm"># Output: dist/VoiceNative.dmg</span></code></pre>
+
+<h3>Permissions</h3>
+<table class="ctbl">
+  <tr><th>Permission</th><th>Why</th></tr>
+  <tr><td><strong>Microphone</strong></td><td>Audio capture for transcription</td></tr>
+  <tr><td><strong>Accessibility</strong></td><td>Global hotkey detection + Cmd+V paste simulation</td></tr>
+</table>
+<p>Grant in System Settings &rarr; Privacy & Security. Both are prompted on first launch.</p>
+</section>
+
+</article>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<footer>
+  <div class="share-row" style="justify-content:center; margin-bottom: 20px;">
+    <a class="share-btn" id="tweet-btn" href="#" target="_blank" rel="noopener noreferrer">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+      Share on X
+    </a>
+    <a class="share-btn" onclick="navigator.clipboard.writeText(window.location.href);this.textContent='Copied!';setTimeout(()=>this.innerHTML='<svg viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' style=\'width:16px;height:16px\'><rect x=\'9\' y=\'9\' width=\'13\' height=\'13\' rx=\'2\'/><path d=\'M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1\'/></svg> Copy link',1500)" style="cursor:pointer">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+      Copy link
+    </a>
+  </div>
+  <p>MIT License &middot; <a href="https://github.com/user/voicenative">Source on GitHub</a></p>
+  <p style="margin-top: 8px; font-size: 12px;">Built with care. Every word earns its place.</p>
+</footer>
+</div>
+
+<script>
+// Scroll progress bar
+const prog = document.getElementById('prog');
+window.addEventListener('scroll', () => {
+  const h = document.body.scrollHeight - window.innerHeight;
+  prog.style.width = (h > 0 ? window.scrollY / h * 100 : 0) + '%';
+}, { passive: true });
+
+// Section navigation dots
+const SECS = [
+  { id: 'how', l: 'How It Works' },
+  { id: 'defaults', l: 'What to Expect' },
+  { id: 'journey', l: 'The Journey' },
+  { id: 'model', l: 'Choosing Model' },
+  { id: 'ane', l: 'Neural Engine' },
+  { id: 'streaming', l: 'Streaming' },
+  { id: 'audio', l: 'Audio' },
+  { id: 'hotkeys', l: 'Hotkeys' },
+  { id: 'hallucinations', l: 'Hallucinations' },
+  { id: 'install', l: 'Install' }
+];
+const dots = document.getElementById('dots');
+SECS.forEach(({ id, l }) => {
+  const d = document.createElement('div');
+  d.className = 'dot';
+  d.setAttribute('data-l', l);
+  d.setAttribute('data-s', id);
+  d.onclick = () => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+  dots.appendChild(d);
+});
+SECS.forEach(({ id }) => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  new IntersectionObserver(entries => entries.forEach(e => {
+    if (e.isIntersecting) {
+      document.querySelectorAll('.dot').forEach(d =>
+        d.classList.toggle('active', d.getAttribute('data-s') === id)
+      );
+    }
+  }), { threshold: 0.25 }).observe(el);
+});
+
+// Scroll reveal
+document.querySelectorAll('.reveal').forEach(el => {
+  new IntersectionObserver(entries => entries.forEach(e => {
+    if (e.isIntersecting) e.target.classList.add('vis');
+  }), { threshold: 0.06, rootMargin: '0px 0px -40px 0px' }).observe(el);
+});
+
+// Twitter share
+document.getElementById('tweet-btn').href =
+  'https://twitter.com/intent/tweet?text=' +
+  encodeURIComponent('VoiceNative \u2014 local voice-to-text for macOS. Press a key, speak, release. Text at your cursor. No cloud, no latency. Open source.') +
+  '&url=' + encodeURIComponent(window.location.href);
+</script>
+</body>
+</html>
