@@ -12,6 +12,8 @@
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://triggeredcode.github.io/voicenative/">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@omkar_builds">
+<meta name="twitter:creator" content="@omkar_builds">
 <meta name="twitter:title" content="VoiceNative — Local Voice-to-Text for macOS">
 <meta name="twitter:description" content="Press a key, speak, release. Text appears at your cursor. 100% on-device. Open source.">
 <style>
@@ -139,6 +141,7 @@ p { margin-bottom: 18px; }
 .insights { display: flex; flex-direction: column; gap: 64px; }
 .insight h3 { font-size: 28px; font-weight: 700; letter-spacing: -.02em; line-height: 1.2; margin-bottom: 16px; }
 .s-dark .insight p { color: var(--text-secondary-dark); }
+.s-light .insight p { color: var(--text-secondary); }
 
 /* Code */
 pre { background: rgba(255,255,255,.06); border: 1px solid var(--border-dark); padding: 20px 24px; border-radius: 12px; font-family: var(--mono); font-size: 13px; line-height: 1.7; overflow-x: auto; margin: 20px 0; color: var(--text-on-dark); }
@@ -166,22 +169,32 @@ pre { background: rgba(255,255,255,.06); border: 1px solid var(--border-dark); p
 @media (max-width: 700px) { .cards-3 { grid-template-columns: 1fr; } }
 .card-3 { padding: 28px 24px; border-radius: 16px; }
 .s-dark .card-3 { background: rgba(255,255,255,.04); border: 1px solid var(--border-dark); }
+.s-light .card-3 { background: rgba(0,0,0,.02); border: 1px solid var(--border); }
 .card-3 h3 { font-size: 18px; margin-bottom: 10px; }
 .s-dark .card-3 p { color: var(--text-secondary-dark); font-size: 15px; margin: 0; }
+.s-light .card-3 p { color: var(--text-secondary); font-size: 15px; margin: 0; }
 .card-3 ul { margin: 0; padding-left: 18px; }
 .s-dark .card-3 li { color: var(--text-secondary-dark); font-size: 14px; margin-bottom: 4px; }
+.s-light .card-3 li { color: var(--text-secondary); font-size: 14px; margin-bottom: 4px; }
 
 /* Two-column compare */
 .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 28px 0; }
 @media (max-width: 520px) { .compare { grid-template-columns: 1fr; } }
-.compare-card { padding: 24px; border-radius: 14px; background: rgba(0,0,0,.03); border: 1px solid var(--border); }
+.compare-card { padding: 24px; border-radius: 14px; }
+.s-light .compare-card { background: rgba(0,0,0,.03); border: 1px solid var(--border); }
+.s-dark .compare-card { background: rgba(255,255,255,.04); border: 1px solid var(--border-dark); }
 .compare-card h4 { font-family: var(--mono); font-size: 15px; font-weight: 600; margin-bottom: 8px; }
-.compare-card p { font-size: 14px; color: var(--text-secondary); margin: 0; line-height: 1.6; }
+.compare-card p { font-size: 14px; margin: 0; line-height: 1.6; }
+.s-light .compare-card p { color: var(--text-secondary); }
+.s-dark .compare-card p { color: var(--text-secondary-dark); }
 
 /* Table */
 .tbl { width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 15px; }
 .tbl th { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; padding: 10px 16px; text-align: left; border-bottom: 2px solid var(--border); color: var(--text-secondary); }
 .tbl td { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.s-dark .tbl th { border-bottom-color: var(--border-dark); color: var(--text-secondary-dark); }
+.s-dark .tbl td { border-bottom-color: var(--border-dark); color: var(--text-secondary-dark); }
+.s-dark .tbl td strong { color: var(--text-on-dark); }
 
 /* Scroll reveal */
 .reveal { opacity: 0; transform: translateY(24px); transition: opacity .7s, transform .7s; }
@@ -191,6 +204,10 @@ pre { background: rgba(255,255,255,.06); border: 1px solid var(--border-dark); p
 footer { padding: 40px 24px 100px; text-align: center; font-size: 13px; color: var(--text-secondary); background: var(--bg-light); }
 footer a { color: var(--text); text-decoration: none; }
 footer a:hover { text-decoration: underline; }
+
+/* Inline code */
+code.il { background: rgba(255,255,255,.08); color: var(--text-on-dark); padding: 2px 8px; border-radius: 4px; font-size: .85em; font-family: var(--mono); }
+.s-light code.il { background: rgba(0,0,0,.06); color: var(--text); }
 </style>
 </head>
 <body>
@@ -301,138 +318,369 @@ footer a:hover { text-decoration: underline; }
       <div class="state-pill on">ready</div>
     </div>
 
+    <p class="muted small">Every action checks state before executing. A model reload can't interrupt recording. An error during processing can't clobber an active session. The state machine prevents these at the type level.</p>
+
     <div class="arch-grid">
       <div class="arch-row arch-row-1">
         <div class="arch-card arch-card-core">
           <div class="arch-card-name">AppState</div>
-          <div class="arch-card-desc">Central coordinator. Owns all services. Drives state transitions.</div>
+          <div class="arch-card-desc">Central coordinator. Owns all services. Drives state transitions. Manages recording timer, streaming pipeline, and keepalive.</div>
         </div>
       </div>
       <div class="arch-connector">&darr;</div>
       <div class="arch-row arch-row-3">
-        <div class="arch-card arch-card-svc"><div class="arch-card-name">AudioCapture</div><div class="arch-card-desc">AVAudioEngine, 48kHz, thread-safe ring buffer</div></div>
-        <div class="arch-card arch-card-svc"><div class="arch-card-name">Transcription</div><div class="arch-card-desc">WhisperKit, CoreML, Neural Engine inference</div></div>
-        <div class="arch-card arch-card-svc"><div class="arch-card-name">Hotkey</div><div class="arch-card-desc">NSEvent global + local monitors</div></div>
+        <div class="arch-card arch-card-svc"><div class="arch-card-name">AudioCapture</div><div class="arch-card-desc">AVAudioEngine at 48kHz native rate. Lock-free ring buffer. On-demand resample to 16kHz + vDSP normalize.</div></div>
+        <div class="arch-card arch-card-svc"><div class="arch-card-name">Transcription</div><div class="arch-card-desc">WhisperKit + CoreML on Neural Engine. Hallucination filter. Prewarm keepalive. Configurable timeout.</div></div>
+        <div class="arch-card arch-card-svc"><div class="arch-card-name">Hotkey</div><div class="arch-card-desc">NSEvent global + local monitors. Toggle state tracking. Right Shift (keycode 60) via .flagsChanged.</div></div>
       </div>
       <div class="arch-row arch-row-3">
-        <div class="arch-card arch-card-svc"><div class="arch-card-name">TextInjection</div><div class="arch-card-desc">NSPasteboard + simulated Cmd+V</div></div>
-        <div class="arch-card arch-card-svc"><div class="arch-card-name">VAD</div><div class="arch-card-desc">Energy-based voice activity detection</div></div>
-        <div class="arch-card arch-card-svc"><div class="arch-card-name">Permissions</div><div class="arch-card-desc">Microphone + Accessibility checks</div></div>
+        <div class="arch-card arch-card-svc"><div class="arch-card-name">TextInjection</div><div class="arch-card-desc">NSPasteboard write + simulated Cmd+V into the frontmost app. Preserves source app reference.</div></div>
+        <div class="arch-card arch-card-svc"><div class="arch-card-name">VAD</div><div class="arch-card-desc">Energy-based voice activity detection. 100ms window. 0.5s calibration. 3s silence timeout for hold-to-talk.</div></div>
+        <div class="arch-card arch-card-svc"><div class="arch-card-name">Permissions</div><div class="arch-card-desc">Microphone + Accessibility status. Checked on launch. Required for capture and global paste.</div></div>
       </div>
     </div>
 
     <h3>Data flow</h3>
     <div class="pipeline">
       <div class="pipe-step">Mic 48kHz</div><span class="pipe-arr">&rarr;</span>
-      <div class="pipe-step">Buffer</div><span class="pipe-arr">&rarr;</span>
-      <div class="pipe-step">16kHz</div><span class="pipe-arr">&rarr;</span>
-      <div class="pipe-step">vDSP</div><span class="pipe-arr">&rarr;</span>
-      <div class="pipe-step hi">WhisperKit</div><span class="pipe-arr">&rarr;</span>
-      <div class="pipe-step">Filter</div><span class="pipe-arr">&rarr;</span>
+      <div class="pipe-step">Ring buffer</div><span class="pipe-arr">&rarr;</span>
+      <div class="pipe-step">Resample 16kHz</div><span class="pipe-arr">&rarr;</span>
+      <div class="pipe-step">vDSP normalize</div><span class="pipe-arr">&rarr;</span>
+      <div class="pipe-step hi">WhisperKit (ANE)</div><span class="pipe-arr">&rarr;</span>
+      <div class="pipe-step">Hallucination filter</div><span class="pipe-arr">&rarr;</span>
       <div class="pipe-step hi">Cmd+V</div>
     </div>
+    <p class="muted small">Capture runs on AVAudioEngine's real-time thread. The ring buffer is lock-free. Resampling and normalization run on the transcription task's thread, not in the audio callback. This separation prevents audio glitches during transcription.</p>
   </div>
 </section>
 
-<!-- ════════════════════════════════════════════ UNDER THE HOOD -->
-<section class="s s-dark reveal" id="hood">
+<!-- ════════════════════════════════════════════ LEARNING 1: CHOOSING THE PATH -->
+<section class="s s-dark reveal" id="inference">
   <div class="inner">
-    <div class="label label-green">Under the Hood</div>
-    <h2 class="headline" style="color:#f5f5f7">What we learned<br>building this.</h2>
+    <div class="label label-green">Learning 1</div>
+    <h2 class="headline" style="color:#f5f5f7">GPU or Neural Engine?<br>We chose the Neural Engine.</h2>
+
+    <p style="color:var(--text-secondary-dark)">Two paths exist for running Whisper on macOS. We tried both.</p>
+
+    <div class="compare">
+      <div class="compare-card">
+        <h4 style="color:var(--text-on-dark)">whisper.cpp + Metal</h4>
+        <p>Runs on the GPU via Metal. GGML format. Loads instantly &mdash; no compilation step. Widely used. But it competes for GPU time with everything else: your windows, scrolling, animations, any other app using Metal.</p>
+      </div>
+      <div class="compare-card" style="border-color:rgba(52,199,89,.3)">
+        <h4 style="color:var(--green)">WhisperKit + CoreML</h4>
+        <p>Runs on the Apple Neural Engine (ANE) &mdash; a dedicated inference accelerator on Apple Silicon. CoreML format. Does not compete for GPU or CPU time. Ideal for a background menu bar app. But CoreML compiles the model for your specific hardware on first load.</p>
+      </div>
+    </div>
+
+    <p style="color:var(--text-secondary-dark)">For a menu bar utility that runs while you do other things, the Neural Engine is the right call. It's an entirely separate chip on your SoC dedicated to ML inference. Your GPU stays free for rendering, your CPU stays free for whatever you're working on.</p>
+
+    <h3 style="color:#f5f5f7;margin-top:40px">Model selection</h3>
+    <p style="color:var(--text-secondary-dark)">We use <code class="il">openai_whisper-large-v3_turbo</code> (~955 MB quantized). We tested smaller models &mdash; they hallucinated more on short utterances. We tested unquantized &mdash; memory increased without a clear accuracy gain for our use case. Large-v3-turbo hit the sweet spot: fast enough for real-time, accurate enough for dictation, small enough to fit comfortably in memory.</p>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════ LEARNING 2: CACHING -->
+<section class="s s-light reveal" id="caching">
+  <div class="inner">
+    <div class="label label-muted">Learning 2</div>
+    <h2 class="headline">First load: 97 seconds.<br>We got it to 5.</h2>
 
     <div class="insights">
       <div class="insight">
-        <h3 style="color:#f5f5f7">We chose the Neural Engine.</h3>
-        <p>Two paths exist on macOS: whisper.cpp runs on Metal (GPU), loads instantly. WhisperKit uses CoreML on the Neural Engine &mdash; a dedicated inference accelerator that doesn't compete for GPU or CPU time. For a menu bar app transcribing in the background, that matters.</p>
-        <p>The trade-off: CoreML compiles the model for your specific hardware on first load. 60&ndash;90 seconds, once. After that, ~5 seconds from cache.</p>
+        <h3>The cache path problem</h3>
+        <p>CoreML compiles the model for your specific hardware the first time it loads. This takes 60&ndash;90 seconds. The compiled model is cached so subsequent loads take ~5 seconds. The difference between a broken app and a fast app was a single directory path.</p>
+        <p>WhisperKit stores compiled models at:</p>
+        <div class="formula">
+          <span class="formula-label">Cache location</span>
+          ~/Documents/huggingface/models/argmaxinc/whisperkit-coreml/{model}
+          <span class="formula-note">When WhisperKit finds compiled artifacts here, it skips the compile step entirely. First launch downloads and compiles. Every launch after reads from this cache.</span>
+        </div>
       </div>
 
       <div class="insight">
-        <h3 style="color:#f5f5f7">First load: 97 seconds. We got it to 5.</h3>
-        <p>The difference between broken and fast was a single directory path. Once we identified the correct cache location (<code style="background:rgba(255,255,255,.08);color:#f5f5f7;padding:2px 8px;border-radius:4px;font-size:.85em">~/Documents/huggingface/models/argmaxinc/whisperkit-coreml</code>), subsequent loads dropped from 97s to ~5s.</p>
-      </div>
-
-      <div class="insight">
-        <h3 style="color:#f5f5f7">The cache breaks if you switch compute units.</h3>
-        <p>Switching from GPU encoder to ANE encoder invalidates the CoreML cache entirely. Another 90-second recompilation. We tried a hybrid &mdash; GPU for encoding, ANE for decoding. CoreML recompiled the full graph. We committed to full ANE for everything.</p>
+        <h3>The cache invalidation problem</h3>
+        <p>CoreML's cache is keyed by the exact compute unit configuration. Change which chip runs which part of the model, and CoreML discards the entire cache. Another 90-second recompilation.</p>
+        <p>We discovered this the hard way. We tried a hybrid setup &mdash; GPU for the encoder, ANE for the decoder. CoreML recompiled the full graph. We tried splitting the model across units. Same result. The cache is all-or-nothing for a given configuration.</p>
+        <p>We committed to a single configuration and never changed it:</p>
         <div class="formula">
           <span class="formula-label">The configuration that stuck</span>
           melCompute: .cpuAndGPU<br>
           audioEncoderCompute: .cpuAndNeuralEngine<br>
           textDecoderCompute: .cpuAndNeuralEngine<br>
           prefillCompute: .cpuOnly
-          <span class="formula-note">Mel on GPU (no ANE compilation needed). Encoder + decoder on ANE (fast sustained inference). Prefill on CPU (avoids ANE contention).</span>
+          <span class="formula-note">Mel spectrogram on GPU &mdash; fast, no ANE compilation needed. Encoder + decoder on Neural Engine &mdash; sustained inference without touching GPU. Prefill on CPU &mdash; avoids contention with the ANE during decode.</span>
         </div>
       </div>
+    </div>
+  </div>
+</section>
 
-      <div class="insight">
-        <h3 style="color:#f5f5f7">The model forgets you after 2 minutes.</h3>
-        <p>macOS silently unloads CoreML models from the Neural Engine after inactivity. Next transcription: 30+ seconds. The fix: transcribe a 0.5-second silent buffer every 2 minutes. Invisible to the user. Keeps the pipeline warm.</p>
-        <pre><code><span class="cm">/// Keep CoreML/ANE pipeline warm</span>
+<!-- ════════════════════════════════════════════ LEARNING 3: KEEPALIVE -->
+<section class="s s-dark reveal" id="keepalive">
+  <div class="inner">
+    <div class="label label-green">Learning 3</div>
+    <h2 class="headline" style="color:#f5f5f7">The model forgets you<br>after 2 minutes.</h2>
+
+    <p style="color:var(--text-secondary-dark)">macOS silently unloads CoreML models from the Neural Engine after a period of inactivity. There is no notification, no callback, no documentation on the exact timeout. We measured it at roughly 2 minutes.</p>
+
+    <p style="color:var(--text-secondary-dark)">When the model is unloaded, the next transcription takes 30+ seconds as CoreML reloads and re-initializes the pipeline. For a voice app, that means the first thing you say after a break takes forever.</p>
+
+    <h3 style="color:#f5f5f7;margin-top:40px">The fix: silent micro-inference</h3>
+    <p style="color:var(--text-secondary-dark)">Every 120 seconds, we transcribe 0.5 seconds of silence (8,000 zero-value Float32 samples). Invisible to the user. Costs negligible compute. Keeps the entire CoreML/ANE pipeline warm.</p>
+
+    <pre><code><span class="cm">/// Keep CoreML/ANE pipeline warm with a silent micro-inference.</span>
+<span class="cm">/// macOS unloads CoreML models from the Neural Engine after ~2min</span>
+<span class="cm">/// of inactivity. This prevents the 30+s reload penalty.</span>
 <span class="kw">func</span> <span class="fn">prewarm</span>() <span class="kw">async</span> {
+    <span class="kw">guard</span> <span class="kw">let</span> wk = whisperKit,
+          isModelLoaded, !isTranscribing, !isLoading <span class="kw">else</span> { <span class="kw">return</span> }
+
     <span class="kw">let</span> silence = [Float](repeating: <span class="nm">0</span>, count: <span class="nm">8000</span>)
     <span class="kw">let</span> options = DecodingOptions(
         task: .transcribe, language: <span class="st">"en"</span>,
         withoutTimestamps: <span class="kw">true</span>, suppressBlank: <span class="kw">true</span>
     )
-    _ = <span class="kw">try</span>? <span class="kw">await</span> whisperKit.transcribe(
+    _ = <span class="kw">try</span>? <span class="kw">await</span> wk.transcribe(
         audioArray: silence, decodeOptions: options
     )
 }</code></pre>
-      </div>
-    </div>
+
+    <h3 style="color:#f5f5f7;margin-top:40px">Wake from sleep</h3>
+    <p style="color:var(--text-secondary-dark)">The same problem occurs when the Mac wakes from sleep &mdash; the Neural Engine is cold. We listen for <code class="il">NSWorkspace.didWakeNotification</code>, wait 3 seconds for the system to stabilize, and run the same prewarm. Users never notice. The pipeline is warm before they reach for the keyboard.</p>
   </div>
 </section>
 
-<!-- ════════════════════════════════════════════ STREAMING -->
+<!-- ════════════════════════════════════════════ LEARNING 4: STREAMING -->
 <section class="s s-light reveal" id="streaming">
   <div class="inner">
-    <div class="label label-muted">Streaming Pipeline</div>
+    <div class="label label-muted">Learning 4</div>
     <h2 class="headline">A 2-minute recording<br>finishes in seconds.</h2>
-    <p class="muted">Whisper processes a maximum of 30 seconds per pass. Without streaming, a 2-minute recording means 36 seconds of waiting. With streaming, we transcribe chunks in the background while you speak. Only the tail needs processing when you stop.</p>
+
+    <div class="insights">
+      <div class="insight">
+        <h3>The problem with Whisper</h3>
+        <p>Whisper processes a maximum of 30 seconds per inference pass. A 2-minute recording needs 4 passes. At a real-time factor of 0.3, that's 36 seconds of waiting after you press stop. Unacceptable for a dictation tool.</p>
+      </div>
+
+      <div class="insight">
+        <h3>The streaming solution</h3>
+        <p>Instead of waiting until the user stops, we transcribe chunks in the background while recording continues. A background task polls every 5 seconds. When accumulated audio exceeds 30 seconds of samples (480,000 at 16kHz), it snapshots that chunk, resamples it, and sends it to WhisperKit.</p>
+        <p>When the user finally stops, only the remaining tail &mdash; whatever accumulated since the last chunk &mdash; needs transcription. Completed chunk texts are concatenated with the tail result.</p>
+      </div>
+    </div>
 
     <div class="compare">
       <div class="compare-card">
         <h4>Without streaming</h4>
-        <p>Wait = ceil(duration / 30) &times; 30 &times; 0.3<br>2 min recording = 36s wait</p>
+        <p>Wait = ceil(duration / 30) &times; 30 &times; RTF<br><br>2 min recording:<br>ceil(120/30) &times; 30 &times; 0.3 = <strong>36s</strong> wait after stop</p>
       </div>
       <div class="compare-card" style="border-color:rgba(52,199,89,.3)">
         <h4 style="color:var(--green)">With streaming</h4>
-        <p>Wait = (duration mod 30) &times; 0.3<br>2 min recording = 0&ndash;9s wait</p>
+        <p>Wait = (duration mod 30) &times; RTF<br><br>2 min recording:<br>(120 mod 30) &times; 0.3 = <strong>0&ndash;9s</strong> wait after stop</p>
       </div>
     </div>
 
     <div class="callout">The actual transcription speed didn't change. We moved the work from "after you stop" to "while you're still talking."</div>
+
+    <h3 style="margin-top:40px">Pipeline internals</h3>
+    <div class="formula">
+      <span class="formula-label">Streaming constants</span>
+      chunk size: 30s at native rate (nativeSampleRate &times; 30)<br>
+      poll interval: 5 seconds<br>
+      minimum chunk: 5 seconds (shorter chunks skipped)<br>
+      chunking strategy: .vad (voice activity detection splitting)<br>
+      overlap: none &mdash; raw sample index advances past each chunk
+      <span class="formula-note">No overlap between chunks. The index advances cleanly. On stop, the final transcription calculates the offset using the sample rate ratio: processedOffset = lastRawEnd &times; (16000 / nativeSampleRate).</span>
+    </div>
+
+    <h3 style="margin-top:40px">Final assembly</h3>
+    <p class="muted">When recording stops, the pipeline task is cancelled and awaited. If there are completed chunks, only the remaining audio past the last chunk's end index is transcribed (minimum 1 second). The final text is all chunk texts joined with a space, plus the tail. If there are no completed chunks (short recordings), the full buffer is transcribed in one pass.</p>
+
+    <h3 style="margin-top:40px">Timeout protection</h3>
+    <p class="muted">Transcription has a dynamic timeout: <code class="il">max(30s, audioDuration &times; 2)</code>. If WhisperKit hangs or takes too long, the task is cancelled and a timeout error is raised. This prevents the app from appearing frozen on edge-case audio.</p>
   </div>
 </section>
 
-<!-- ════════════════════════════════════════════ DETAILS -->
-<section class="s s-dark reveal" id="details">
-  <div class="inner-wide">
-    <div style="text-align:center;margin-bottom:48px">
-      <div class="label label-green">The Details</div>
-      <h2 class="headline" style="color:#f5f5f7">Audio. Hotkeys. Hallucinations.</h2>
-    </div>
+<!-- ════════════════════════════════════════════ LEARNING 5: AUDIO PIPELINE -->
+<section class="s s-dark reveal" id="audio">
+  <div class="inner">
+    <div class="label label-green">Learning 5</div>
+    <h2 class="headline" style="color:#f5f5f7">The audio pipeline<br>is the foundation.</h2>
 
-    <div class="cards-3">
-      <div class="card-3">
-        <h3 style="color:#f5f5f7">Audio pipeline</h3>
-        <p>Capture at 48kHz native rate via AVAudioEngine. Resample to 16kHz mono on demand using AVAudioConverter. Peak-normalize with vDSP (Accelerate framework). Without normalization, quiet mics produce samples Whisper reads as silence &mdash; triggering hallucinations.</p>
+    <div class="insights">
+      <div class="insight">
+        <h3 style="color:#f5f5f7">Capture: native rate, not target rate</h3>
+        <p>Whisper expects 16kHz mono Float32. macOS microphones typically run at 48kHz. We had two options: capture directly at 16kHz using CoreAudio AUHAL (no resampling needed), or capture at the mic's native rate and resample on demand.</p>
+        <p>We chose native capture with AVAudioEngine. The reason: AVAudioEngine handles device switching gracefully and provides simpler buffer management. CoreAudio AUHAL at 16kHz would skip the resampling step but requires manual device handling.</p>
+        <div class="formula">
+          <span class="formula-label">Capture configuration</span>
+          engine: AVAudioEngine<br>
+          input: engine.inputNode<br>
+          format: native output format (typically 48kHz)<br>
+          tap buffer: 4,096 frames<br>
+          storage: [Float] ring buffer with NSLock<br>
+          pre-allocated capacity: nativeSampleRate &times; 300 (5 min)
+        </div>
       </div>
-      <div class="card-3">
-        <h3 style="color:#f5f5f7">Hotkey detection</h3>
-        <p>NSEvent global + local monitors, not CGEventTap. CGEventTap requires Input Monitoring permission and silently fails when the app's own windows have focus. Right Shift is a modifier (keycode 60), detected via <code style="background:rgba(255,255,255,.08);color:#f5f5f7;padding:1px 6px;border-radius:3px;font-size:.85em">.flagsChanged</code>, not <code style="background:rgba(255,255,255,.08);color:#f5f5f7;padding:1px 6px;border-radius:3px;font-size:.85em">.keyDown</code>.</p>
+
+      <div class="insight">
+        <h3 style="color:#f5f5f7">Resampling: AVAudioConverter, not manual</h3>
+        <p>Resampling from 48kHz to 16kHz happens on demand &mdash; not in the audio callback. The tap callback only appends raw samples to the ring buffer. When it's time to transcribe, <code class="il">prepareChunk()</code> copies samples from the buffer, resamples via AVAudioConverter, and normalizes.</p>
+        <p>If the mic has multiple channels, we downmix to mono first by averaging all channels. The output capacity includes a 1,024-sample safety margin to prevent buffer underflow during conversion.</p>
       </div>
-      <div class="card-3">
-        <h3 style="color:#f5f5f7">Hallucination filter</h3>
-        <p>Whisper hallucinates on silence &mdash; "thank you for watching", repeated n-grams, non-ASCII output. We filter post-transcription:</p>
-        <ul>
-          <li>Known phrase matching</li>
-          <li>N-gram repetition (3+ repeats)</li>
-          <li>ASCII ratio validation</li>
-        </ul>
+
+      <div class="insight">
+        <h3 style="color:#f5f5f7">Normalization: the difference between speech and hallucination</h3>
+        <p>After resampling, we peak-normalize using vDSP from Apple's Accelerate framework. Without normalization, quiet microphones produce low-amplitude samples. Whisper interprets low-amplitude audio as silence &mdash; and hallucinates.</p>
+
+        <pre><code><span class="cm">/// Peak normalization via Accelerate (vDSP)</span>
+<span class="kw">var</span> peak: Float = <span class="nm">0</span>
+vDSP_maxmgv(samples, <span class="nm">1</span>, &amp;peak, vDSP_Length(count))
+
+<span class="kw">if</span> peak > <span class="nm">0</span> {
+    <span class="cm">// Target peak: 0.95 (headroom). Max gain: 20× (safety limit).</span>
+    <span class="kw">var</span> scale = min(<span class="nm">0.95</span> / peak, <span class="nm">20.0</span>)
+
+    <span class="cm">// Skip if already normalized (within 1% of target)</span>
+    <span class="kw">if</span> scale > <span class="nm">0.99</span> &amp;&amp; scale < <span class="nm">1.01</span> { <span class="kw">return</span> samples }
+
+    vDSP_vsmul(samples, <span class="nm">1</span>, &amp;scale, &amp;result, <span class="nm">1</span>,
+               vDSP_Length(count))
+}</code></pre>
+
+        <p>The target peak is 0.95 (leaving headroom). The gain is capped at 20&times; to prevent amplifying noise floors into hallucination triggers. If the audio is already within 1% of the target, we skip normalization entirely.</p>
       </div>
     </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════ LEARNING 6: HOTKEYS -->
+<section class="s s-light reveal" id="hotkeys">
+  <div class="inner">
+    <div class="label label-muted">Learning 6</div>
+    <h2 class="headline">Global hotkeys are<br>harder than they look.</h2>
+
+    <div class="insights">
+      <div class="insight">
+        <h3>NSEvent monitors, not CGEventTap</h3>
+        <p>macOS gives you two ways to detect global keystrokes. We tried both.</p>
+
+        <table class="tbl">
+          <tr><th>Approach</th><th>CGEventTap</th><th>NSEvent monitors</th></tr>
+          <tr><td><strong>Level</strong></td><td>Core Graphics</td><td>AppKit</td></tr>
+          <tr><td><strong>Permission</strong></td><td>Input Monitoring</td><td>Accessibility</td></tr>
+          <tr><td><strong>Self-window bug</strong></td><td>Silently fails when app's own windows have focus</td><td>Works via local monitor</td></tr>
+          <tr><td><strong>Registration</strong></td><td>Manual event tap + run loop source</td><td>One-liner with block callback</td></tr>
+        </table>
+
+        <p>CGEventTap requires Input Monitoring permission and has a subtle bug: when the app's own popover or settings window has focus, the global tap stops receiving events. You need a separate local monitor for that case anyway.</p>
+        <p>NSEvent gives you both: <code class="il">globalMonitorForEvents</code> for keystrokes in other apps, <code class="il">localMonitorForEvents</code> for keystrokes in your own windows. Same API, same callbacks. We use both.</p>
+      </div>
+
+      <div class="insight">
+        <h3>Right Shift is not a key press</h3>
+        <p>Right Shift (keycode 60) is a modifier, not a regular key. It doesn't fire <code class="il">.keyDown</code> / <code class="il">.keyUp</code>. It fires <code class="il">.flagsChanged</code>. You check the event's modifier flags to determine whether the key went down or up. Toggle state is maintained manually: first press starts recording, second press stops.</p>
+        <p>Escape (keycode 53) is the cancel key. Left Shift (keycode 56) is ignored to avoid conflicts with typing.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════ LEARNING 7: HALLUCINATIONS -->
+<section class="s s-dark reveal" id="hallucinations">
+  <div class="inner">
+    <div class="label label-green">Learning 7</div>
+    <h2 class="headline" style="color:#f5f5f7">Whisper hallucinates.<br>A lot.</h2>
+
+    <div class="insights">
+      <div class="insight">
+        <h3 style="color:#f5f5f7">The problem</h3>
+        <p>Whisper was trained on YouTube transcripts. When it hears silence or near-silence, it doesn't output nothing &mdash; it outputs what it learned from YouTube: "Thank you for watching", "Please like and subscribe", "See you in the next video". Sometimes it outputs repeated n-grams. Sometimes it switches to Chinese or Cyrillic for no reason.</p>
+        <p>This isn't a bug &mdash; it's the model doing exactly what it was trained to do. The training data is full of these phrases, and silence provides no signal to override them.</p>
+      </div>
+
+      <div class="insight">
+        <h3 style="color:#f5f5f7">The filter: three layers</h3>
+        <p>We built a post-transcription filter with three checks. If any check triggers, the transcription is discarded entirely.</p>
+
+        <div class="cards-3" style="margin-top:24px">
+          <div class="card-3">
+            <h3 style="color:#f5f5f7">1. Pattern matching</h3>
+            <p>Exact match (case-insensitive, trimmed) against known hallucination phrases: "thank you for watching", "thanks for watching", "subscribe to my channel", "please like and subscribe", "see you in the next video", "don't forget to subscribe", "hit the bell", "leave a comment", "share this video", "thanks for listening", "goodbye", "bye bye", "you". Also matches with trailing period.</p>
+          </div>
+          <div class="card-3">
+            <h3 style="color:#f5f5f7">2. N-gram repetition</h3>
+            <p>For transcriptions with 6+ words: check n-grams from size 1 to 5. If all n-grams of any size are identical and there are 3+ repetitions, it's a hallucination. Catches "the the the the the" and "thank you thank you thank you".</p>
+          </div>
+          <div class="card-3">
+            <h3 style="color:#f5f5f7">3. Character set validation</h3>
+            <p>For English transcription: if fewer than half the characters are ASCII, discard. Catches CJK, Cyrillic, and other script hallucinations that Whisper sometimes produces when it loses confidence.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="insight">
+        <h3 style="color:#f5f5f7">What we tried and abandoned: prompt tokens</h3>
+        <p>We experimented with feeding a technical dictionary as prompt tokens to bias Whisper toward domain-specific vocabulary. The result: <em>more</em> hallucinations, not fewer. Prompt tokens add latency and can bias the model toward generating text even when input is silence. We removed them and moved vocabulary handling to post-processing.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════ LEARNING 8: TEXT INJECTION + VAD -->
+<section class="s s-light reveal" id="injection">
+  <div class="inner">
+    <div class="label label-muted">Learning 8</div>
+    <h2 class="headline">Paste, don't type.</h2>
+
+    <div class="insights">
+      <div class="insight">
+        <h3>Text injection via pasteboard</h3>
+        <p>After transcription, the text needs to appear in whatever app the user was in. We save the frontmost application reference when recording starts (<code class="il">NSWorkspace.shared.frontmostApplication</code>), write the transcribed text to NSPasteboard, and simulate Cmd+V.</p>
+        <p>Why paste instead of typing each character? Speed and reliability. Simulating individual keystrokes fails with special characters, non-ASCII text, and apps that have custom key handling. A single paste operation works everywhere that supports Cmd+V &mdash; which is everything.</p>
+        <p>Accessibility permission is required for simulating the paste keystroke. This is the same permission needed for the global hotkey &mdash; one grant covers both.</p>
+      </div>
+
+      <div class="insight">
+        <h3>Voice Activity Detection</h3>
+        <p>VAD provides automatic silence-based stop for hold-to-talk mode. It uses energy-based detection with a 100ms analysis window. On launch, a 0.5-second calibration period measures ambient noise to set the baseline.</p>
+        <p>After at least 3 seconds of recording (to avoid premature stops), if silence exceeds the timeout (default 3 seconds), VAD triggers stop. The minimum recording threshold prevents the app from stopping before the user has had a chance to speak.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════ SYSTEM DEFAULTS -->
+<section class="s s-dark reveal" id="defaults">
+  <div class="inner">
+    <div class="label label-green">Reference</div>
+    <h2 class="headline" style="color:#f5f5f7">System defaults.</h2>
+    <p style="color:var(--text-secondary-dark);margin-bottom:32px">Every value that ships with VoiceNative. No hidden configuration.</p>
+
+    <table class="tbl">
+      <tr><th>Parameter</th><th>Value</th><th>Why</th></tr>
+      <tr><td><strong>Target sample rate</strong></td><td>16,000 Hz</td><td>Whisper's expected input</td></tr>
+      <tr><td><strong>Channels</strong></td><td>1 (mono)</td><td>Whisper is mono-only</td></tr>
+      <tr><td><strong>Tap buffer size</strong></td><td>4,096 frames</td><td>Balance between latency and callback frequency</td></tr>
+      <tr><td><strong>Max recording</strong></td><td>300s (5 min)</td><td>Same as macOS dictation default</td></tr>
+      <tr><td><strong>Min duration for transcription</strong></td><td>0.3s</td><td>Below this, nothing useful to transcribe</td></tr>
+      <tr><td><strong>Hotkey</strong></td><td>Right Shift (60)</td><td>Rarely used alone; no conflict with typing</td></tr>
+      <tr><td><strong>Cancel key</strong></td><td>Escape (53)</td><td>Standard macOS cancel idiom</td></tr>
+      <tr><td><strong>Keepalive interval</strong></td><td>120s</td><td>Just under ANE's unload timeout</td></tr>
+      <tr><td><strong>Prewarm samples</strong></td><td>8,000 (0.5s)</td><td>Minimum to trigger pipeline; negligible cost</td></tr>
+      <tr><td><strong>Wake delay</strong></td><td>3s</td><td>System stabilization after sleep</td></tr>
+      <tr><td><strong>Streaming chunk</strong></td><td>30s at native rate</td><td>Whisper's max input window</td></tr>
+      <tr><td><strong>Streaming poll</strong></td><td>5s</td><td>Balance between latency and CPU usage</td></tr>
+      <tr><td><strong>Transcription timeout</strong></td><td>max(30s, 2&times; audio)</td><td>Dynamic; prevents hangs on edge cases</td></tr>
+      <tr><td><strong>Normalization peak</strong></td><td>0.95</td><td>Headroom to prevent clipping</td></tr>
+      <tr><td><strong>Max normalization gain</strong></td><td>20&times;</td><td>Safety limit; prevents noise amplification</td></tr>
+      <tr><td><strong>VAD window</strong></td><td>100ms</td><td>Energy analysis resolution</td></tr>
+      <tr><td><strong>VAD calibration</strong></td><td>0.5s</td><td>Ambient noise baseline measurement</td></tr>
+      <tr><td><strong>Silence timeout</strong></td><td>3.0s</td><td>Hold-to-talk auto-stop threshold</td></tr>
+      <tr><td><strong>Min recording before VAD</strong></td><td>3.0s</td><td>Prevents premature stop</td></tr>
+      <tr><td><strong>Icon feedback</strong></td><td>1.5s</td><td>Duration of menu bar icon state feedback</td></tr>
+    </table>
   </div>
 </section>
 
@@ -446,7 +694,8 @@ footer a:hover { text-decoration: underline; }
     <ol style="margin:0 0 32px 20px">
       <li>Download from <a href="https://github.com/triggeredcode/voicenative/releases/latest" style="color:var(--green);text-decoration:none">Releases</a></li>
       <li>Open the DMG, drag VoiceNative to Applications</li>
-      <li>Grant Microphone and Accessibility permissions</li>
+      <li>Grant Microphone and Accessibility permissions when prompted</li>
+      <li>Wait ~90 seconds on first launch for model download + Neural Engine compilation</li>
     </ol>
 
     <h3>Build from source</h3>
@@ -458,15 +707,16 @@ make dmg</code></pre>
     <h3>Permissions</h3>
     <table class="tbl">
       <tr><th>Permission</th><th>Why</th></tr>
-      <tr><td><strong>Microphone</strong></td><td>Audio capture</td></tr>
-      <tr><td><strong>Accessibility</strong></td><td>Global hotkey + Cmd+V paste</td></tr>
+      <tr><td><strong>Microphone</strong></td><td>Audio capture via AVAudioEngine</td></tr>
+      <tr><td><strong>Accessibility</strong></td><td>Global hotkey detection (NSEvent) + simulated Cmd+V paste</td></tr>
     </table>
+    <p class="muted small">Both permissions are requested on first launch. Grant them in System Settings &rarr; Privacy &amp; Security.</p>
   </div>
 </section>
 
 <!-- ════════════════════════════════════════════ FOOTER -->
 <footer>
-  <p>MIT License &middot; <a href="https://github.com/triggeredcode/voicenative">Source on GitHub</a></p>
+  <p>Built by <a href="https://twitter.com/omkar_builds" target="_blank" rel="noopener">@omkar_builds</a> &middot; MIT License &middot; <a href="https://github.com/triggeredcode/voicenative">Source on GitHub</a></p>
 </footer>
 
 <script>
@@ -484,11 +734,11 @@ new IntersectionObserver(entries => {
   fab.classList.toggle('vis', !entries[0].isIntersecting);
 }, { threshold: 0 }).observe(hero);
 
-// Tweet URL
+// Tweet URL with @omkar_builds and hashtags
 document.getElementById('fab-tweet').href =
   'https://twitter.com/intent/tweet?text=' +
-  encodeURIComponent('VoiceNative \u2014 local voice-to-text for macOS. No cloud, no latency. Open source.') +
-  '&url=' + encodeURIComponent(window.location.href);
+  encodeURIComponent('VoiceNative \u2014 local voice-to-text for macOS. No cloud, no latency. Open source.\n\nBuilt by @omkar_builds\n\n#macOS #BuildInPublic #SwiftUI #AppleSilicon') +
+  '&url=' + encodeURIComponent('https://triggeredcode.github.io/voicenative/');
 
 // Waveform animation
 (function() {
